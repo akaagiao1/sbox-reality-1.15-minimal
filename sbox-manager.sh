@@ -1209,7 +1209,7 @@ notify_send() {
       --data-urlencode "chat_id=$chat" \
       --data-urlencode "text=$text" \
       "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" 2>/dev/null || true)"
-    if ! jq -e '.ok == true' <<<"${response:-{}}" >/dev/null 2>&1; then
+    if ! jq -e '.ok == true' <<<"${response:-null}" >/dev/null 2>&1; then
       warn "Telegram 通知发送失败（chat_id=$chat）"
       failed=1
     fi

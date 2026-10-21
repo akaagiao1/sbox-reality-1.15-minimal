@@ -961,8 +961,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-
 bash tests/test-warp-routing.sh all
 bash tests/test-sbox-manager.sh
 bash tests/test-minimal-config.sh
+bash tests/test-notify.sh
 shellcheck -S warning install.sh sbox-manager.sh reality.sh install-*.sh \
-  tests/test-warp-routing.sh tests/test-sbox-manager.sh tests/test-minimal-config.sh
+  tests/test-warp-routing.sh tests/test-sbox-manager.sh tests/test-minimal-config.sh tests/test-notify.sh
 ```
 
 设置 `SING_BOX_TEST_BIN=/path/to/sing-box` 后，测试还会执行当前 Alpha 二进制的配置 schema 和规则集启动验证。GitHub Actions 会自动下载最新 Alpha 并运行这些检查。

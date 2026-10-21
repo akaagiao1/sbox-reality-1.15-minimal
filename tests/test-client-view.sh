@@ -8,7 +8,7 @@ export SBOX_STATE_DIR_OVERRIDE="$TMP/state"
 export SBOX_CLIENTS_ROOT_OVERRIDE="$TMP/clients"
 export SBOX_SERVER_CONF_OVERRIDE="$TMP/config.json"
 # shellcheck disable=SC1090
-source <(sed '$d' "$ROOT/sbox-manager.sh")
+source "$ROOT/sbox-manager.sh"
 init_state
 cat > "$NODES_FILE" <<'JSON'
 {"schema":1,"nodes":[

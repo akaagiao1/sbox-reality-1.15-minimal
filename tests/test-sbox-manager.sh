@@ -181,6 +181,9 @@ assert_true "deleting one customer should leave other nodes intact" \
   manage node remove cust-f
 assert_eq "5" "$(jq -r '.nodes | length' "$TMP/state/nodes.json")" \
   "node removal should remove exactly one managed node"
+assert_true "deleted customer must no longer have a listening inbound" \
+  jq -e 'all(.inbounds[]; .tag != "sbox-direct-cust-f")' \
+    "$TMP/etc/sing-box/config.json"
 assert_true "other customer inbounds should remain" \
   jq -e '([.inbounds[] | select(.tag == "sbox-snell5-cust-a")] | length) == 1' \
     "$TMP/etc/sing-box/config.json"

@@ -33,8 +33,16 @@ WARP_INSTALL_CONFIG_EXISTED=0
 WARP_INSTALL_CREDENTIALS_EXISTED=0
 INSTALL_TRANSACTION_ACTIVE=0
 INSTALL_TRANSACTION_DIR=""
+INSTALL_PACKAGE_CHANGED=0
 INSTALL_SERVICE_WAS_ACTIVE=0
 INSTALL_SERVICE_WAS_ENABLED=0
+SING_BOX_VERSION=""
+SING_BOX_INSTALL_PATHS=(
+  /usr/bin/sing-box /usr/local/bin/sing-box
+  /usr/lib/sing-box /usr/local/lib/sing-box
+  /etc/init.d/sing-box /etc/systemd/system/sing-box.service
+  /usr/lib/systemd/system/sing-box.service /lib/systemd/system/sing-box.service
+)
 
 [[ -n "${HY2_PORT_HOPPING+x}" ]] && HY2_PORT_HOPPING_EXPLICIT=1
 [[ -n "${HOP_PORTS+x}" ]] && HOP_PORTS_EXPLICIT=1
@@ -113,6 +121,8 @@ MANAGEMENT_ARGS=()
 # Path overrides are accepted only by the isolated test harness. Production
 # runs always use the fixed system locations above.
 if [[ "${SBOX_REALITY_TEST_MODE:-0}" == "1" ]]; then
+  # Tests opt into temporary runtime paths explicitly; never restore host files.
+  SING_BOX_INSTALL_PATHS=()
   SERVER_CONF="${SERVER_CONF_OVERRIDE:-$SERVER_CONF}"
   WARP_CREDENTIALS_FILE="${WARP_CREDENTIALS_FILE_OVERRIDE:-$WARP_CREDENTIALS_FILE}"
   BACKUP_ROOT="${BACKUP_ROOT_OVERRIDE:-$BACKUP_ROOT}"
@@ -392,16 +402,21 @@ service_disable() {
 }
 
 restore_install_service_state() {
+  local status=0
   if (( INSTALL_SERVICE_WAS_ENABLED )); then
-    service_enable || true
+    service_enable || status=1
   else
-    service_disable || true
+    service_disable || status=1
   fi
   if (( INSTALL_SERVICE_WAS_ACTIVE )); then
-    service_restart || true
+    service_restart || status=1
   else
-    service_stop
+    service_stop || status=1
   fi
+  if (( status )); then
+    echo "错误：安装前的服务状态未能恢复，请检查 sing-box 服务日志。" >&2
+  fi
+  return "$status"
 }
 
 restore_manager_services() {
@@ -570,6 +585,7 @@ WARP 分流选项：
 通用选项：
   -m, --mode          模式：1-9、anytls、vless、hy2、snell5、snell6、direct、full、uninstall、restore；协议可逗号多选
   -p, --port          当前单协议模式的端口；同时安装时请分别使用各协议端口选项
+      --version       安装指定 sing-box 版本（例如 1.15.0-alpha.19）；默认最新 Alpha
       --server-host   写入客户端配置的公网 IP 或域名；无法自动检测时必填
       --customer      一键创建多客户节点时使用的客户 ID
       --quota         客户节点每月流量额度，例如 100G
@@ -1519,7 +1535,7 @@ warp_finalize_install_transaction() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -m|--mode|--install|--config|\
+    -m|--mode|--install|--config|--version|\
     --customer|--customer-id|--quota|--reset-day|--expires|\
     --tg-token|--tg-chat-id|\
     -d|--domain|--reality-domain|--anytls-port|--vless-domain|--vless-port|\
@@ -1538,6 +1554,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -m|--mode|--install)
       INSTALL_MODE="${2:-}"
+      shift 2
+      ;;
+    --version)
+      SING_BOX_VERSION="${2#v}"
+      if [[ ! "$SING_BOX_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+        echo "错误：--version 必须指定完整版本号，例如 1.15.0-alpha.19" >&2
+        exit 1
+      fi
       shift 2
       ;;
     --customer|--customer-id)
@@ -2760,6 +2784,7 @@ begin_install_transaction() {
     "$CERT_PATH"
     "$KEY_PATH"
     "$OUTPUT_DIR"
+    "${SING_BOX_INSTALL_PATHS[@]}"
   )
 
   (( INSTALL_TRANSACTION_ACTIVE )) && return 0
@@ -2797,10 +2822,57 @@ begin_install_transaction() {
   done
 
   INSTALL_TRANSACTION_DIR="$snapshot_dir"
+  INSTALL_PACKAGE_CHANGED=0
   INSTALL_TRANSACTION_ACTIVE=1
   trap 'install_transaction_on_exit' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+}
+
+# Add package-owned files before dpkg can replace or remove them. Never snapshot
+# package directories such as /usr wholesale; runtime directories above are bounded.
+snapshot_install_package_path() {
+  local path="$1" entry index=0 kind=missing exists=0
+  [[ "$path" == /* && "$path" != / && "$path" != /. && "$path" != *$'\n'* ]] || return 1
+  for entry in "$INSTALL_TRANSACTION_DIR"/path.*; do
+    [[ "$(cat "$entry")" == "$path" ]] && return 0
+    index=$(( index + 1 ))
+  done
+  if [[ -e "$path" || -L "$path" ]]; then
+    exists=1
+    if [[ -L "$path" ]]; then kind=symlink
+    elif [[ -d "$path" ]]; then kind=directory
+    else kind="file"
+    fi
+    cp -a -- "$path" "$INSTALL_TRANSACTION_DIR/data/$index" || return 1
+  fi
+  printf '%s' "$exists" > "$INSTALL_TRANSACTION_DIR/existed.$index" || return 1
+  printf '%s' "$kind" > "$INSTALL_TRANSACTION_DIR/kind.$index" || return 1
+  printf '%s' "$path" > "$INSTALL_TRANSACTION_DIR/path.$index"
+}
+
+snapshot_sing_box_package_files() {
+  local package_path="$1" path manifest
+  (( INSTALL_TRANSACTION_ACTIVE )) || return 1
+  manifest="$(mktemp)" || return 1
+  # A missing installed package is normal on a first install.
+  dpkg-query -L sing-box > "$manifest" 2>/dev/null || :
+  while IFS= read -r path; do
+    [[ -f "$path" || -L "$path" ]] || continue
+    if ! snapshot_install_package_path "$path"; then rm -f "$manifest"; return 1; fi
+  done < "$manifest"
+  if ! dpkg-deb --fsys-tarfile "$package_path" | tar -tf - > "$manifest"; then
+    rm -f "$manifest"
+    return 1
+  fi
+  while IFS= read -r path; do
+    [[ "$path" == */ ]] && continue
+    path="/${path#./}"
+    # Release payloads must not escape their installation path.
+    [[ "$path" != *'/../'* && "$path" != */.. ]] || { rm -f "$manifest"; return 1; }
+    if ! snapshot_install_package_path "$path"; then rm -f "$manifest"; return 1; fi
+  done < "$manifest"
+  rm -f "$manifest"
 }
 
 restore_install_transaction_entry() {
@@ -2828,13 +2900,15 @@ restore_install_transaction_entry() {
 }
 
 rollback_install_transaction() {
-  local index
+  local index entry
 
   (( INSTALL_TRANSACTION_ACTIVE )) || return 0
   [[ -n "$INSTALL_TRANSACTION_DIR" && -d "$INSTALL_TRANSACTION_DIR" ]] || return 1
   trap - EXIT INT TERM
 
-  for index in {0..8}; do
+  service_stop
+  for entry in "$INSTALL_TRANSACTION_DIR"/path.*; do
+    index="${entry##*.}"
     if ! restore_install_transaction_entry "$INSTALL_TRANSACTION_DIR" "$index"; then
       echo "错误：安装回滚不完整，恢复快照保留在 $INSTALL_TRANSACTION_DIR" >&2
       return 1
@@ -2847,6 +2921,14 @@ rollback_install_transaction() {
   fi
   INSTALL_TRANSACTION_DIR=""
   INSTALL_TRANSACTION_ACTIVE=0
+  if (( INSTALL_PACKAGE_CHANGED )); then
+    echo "警告：已恢复 sing-box 程序和运行文件；dpkg 软件包数据库未回滚，请重新安装所需版本以同步软件包状态。" >&2
+    INSTALL_PACKAGE_CHANGED=0
+  fi
+  SING_BOX_BIN=""
+  resolve_sing_box_binary || true
+  service_reload || true
+  restore_install_service_state
 }
 
 finalize_install_transaction() {
@@ -2858,6 +2940,7 @@ finalize_install_transaction() {
   fi
   INSTALL_TRANSACTION_DIR=""
   INSTALL_TRANSACTION_ACTIVE=0
+  INSTALL_PACKAGE_CHANGED=0
 }
 
 install_transaction_on_exit() {
@@ -2865,10 +2948,7 @@ install_transaction_on_exit() {
   trap - EXIT INT TERM
   if (( INSTALL_TRANSACTION_ACTIVE )); then
     echo "安装未完成，正在恢复安装前状态……" >&2
-    if rollback_install_transaction; then
-      service_reload || true
-      restore_install_service_state
-    fi
+    rollback_install_transaction || true
     if (( WARP_INSTALL_ACTIVE )); then
       warp_finalize_install_transaction || true
     fi
@@ -3241,6 +3321,7 @@ reuse_existing_config() {
   service_reload
   service_enable
   service_restart
+  finalize_install_transaction
 
   echo
   echo "重新安装完成，现有配置和凭据已保留。"
@@ -4061,7 +4142,14 @@ install_sing_box_debian() {
     return 1
   fi
 
+  if ! snapshot_sing_box_package_files "$package_path"; then
+    echo "错误：无法快照 sing-box 软件包文件，取消安装" >&2
+    rm -rf -- "$tmpdir"
+    return 1
+  fi
+
   real_dpkg="$(command -v dpkg)"
+  INSTALL_PACKAGE_CHANGED=1
   if ! DEBIAN_FRONTEND=noninteractive "$real_dpkg" \
     --force-confdef --force-confold -i "$package_path"; then
     rm -rf -- "$tmpdir"
@@ -4136,13 +4224,13 @@ install_sing_box_alpine() {
 install_base_dependencies() {
   echo "正在安装基础依赖……"
   if [[ "$PLATFORM" == "alpine" ]]; then
-    apk add --no-cache bash curl git openssl ca-certificates iproute2 coreutils jq nftables iptables conntrack-tools openrc
+    apk add --no-cache bash curl git openssl ca-certificates iproute2 coreutils jq nftables iptables conntrack-tools openrc util-linux
   else
     apt update
     DEBIAN_FRONTEND=noninteractive apt install -y \
       -o Dpkg::Options::="--force-confdef" \
       -o Dpkg::Options::="--force-confold" \
-      curl git openssl ca-certificates iproute2 coreutils jq nftables iptables conntrack procps
+      curl git openssl ca-certificates iproute2 coreutils jq nftables iptables conntrack procps util-linux
   fi
 }
 
@@ -4160,10 +4248,12 @@ ensure_port_tools() {
 install_sing_box() {
   local release_version attempt installed=0
 
-  if ! release_version="$(fetch_preferred_sing_box_version)"; then
+  release_version="$SING_BOX_VERSION"
+  if [[ -z "$release_version" ]] && ! release_version="$(fetch_preferred_sing_box_version)"; then
     echo "错误：获取 sing-box 最新 Alpha 版本失败"
     exit 1
   fi
+  begin_install_transaction || return 1
   echo "正在安装 sing-box v${release_version}……"
   for attempt in 1 2 3; do
     if {
@@ -4186,7 +4276,7 @@ install_sing_box() {
     echo "错误：sing-box v${release_version} 安装失败，请稍后重试"
     exit 1
   fi
-  mkdir -p /etc/sing-box
+  mkdir -p "$(dirname "$SERVER_CONF")"
 }
 
 install_dependencies() {
@@ -4727,8 +4817,6 @@ complete_install_after_config() {
   if ! rollback_install_transaction; then
     return 1
   fi
-  service_reload || true
-  restore_install_service_state
   if (( WARP_INSTALL_ACTIVE )); then
     warp_finalize_install_transaction || true
   fi
@@ -5350,7 +5438,15 @@ run_customer_install() {
   )
   [[ -n "$CUSTOMER_EXPIRES" ]] && manager_args+=(--expires "$CUSTOMER_EXPIRES")
   manager_args+=("${args[@]}")
-  SBOX_SERVER_HOST="$SERVER_HOST" "$MANAGER_NODE_BIN" "${manager_args[@]}"
+  # Finish the runtime upgrade before the manager starts its own node transaction.
+  # Notification failures after a committed node must not restore only config.json.
+  if [[ -s "$SERVER_CONF" ]]; then
+    run_sing_box check -c "$SERVER_CONF" || return 1
+    service_reload || return 1
+    service_restart || return 1
+  fi
+  finalize_install_transaction || return 1
+  SBOX_SERVER_HOST="$SERVER_HOST" "$MANAGER_NODE_BIN" "${manager_args[@]}" || return $?
 
   if [[ -n "$TG_TOKEN" && -n "$TG_CHAT_ID" ]]; then
     "$MANAGER_NODE_BIN" notify setup "$TG_TOKEN" "$TG_CHAT_ID"
@@ -5415,6 +5511,7 @@ run_manager_setup() {
   "$MANAGER_NODE_BIN" traffic timer >/dev/null 2>&1 || true
 
   echo
+  finalize_install_transaction
   echo "首次初始化完成。"
   if (( telegram_configured )); then
     echo "Telegram 通知：已配置并测试"

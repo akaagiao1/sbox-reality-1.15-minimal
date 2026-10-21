@@ -12,6 +12,15 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-
 
 Alpine 先执行 `apk add --no-cache bash curl`。
 
+安装默认获取最新 Alpha。需要固定版本时，下载脚本并指定完整版本号：
+
+```bash
+curl -fsSL -o install.sh https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh
+bash install.sh --setup --version 1.15.0-alpha.12
+```
+
+安装失败会尝试恢复升级前的程序、运行文件、配置和服务状态。Debian/Ubuntu 的 dpkg 软件包数据库不随文件恢复回滚；出现相关警告时，应重新安装所需版本以同步软件包状态。
+
 按提示配置 Telegram，然后运行管理菜单：
 
 ```bash
@@ -34,6 +43,8 @@ sbox-node node add alice-vless vless --customer alice --port auto \
 ```
 
 `alice` 是用户 ID；`alice-snell6`、`alice-vless` 是唯一的节点 ID。**额度按节点分别统计，不合并为用户总额度**，统计上行与下行总流量，月度重置日支持 `1–28`。额度用完或到期会暂停该节点。
+
+额度支持 `B/K/M/G/T/P`（也可使用 `GiB` 等形式）和小数，`0` 表示不限。为保证 JSON 和计算精度，最大支持 `9007199254740991` 字节；不支持 `E/EB/EiB`，正额度不得小于 1 字节。
 
 | 协议参数 | sing-box 客户端 | Surge |
 | --- | --- | --- |

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Variables configure the dynamically sourced installer functions.
+# shellcheck disable=SC2034
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TMP="$(mktemp -d)"
@@ -30,7 +32,7 @@ jq -e 'keys == ["inbounds"] and .inbounds[0].tag == "test-in"' "$TMP/fresh.json"
 # Exercise manager rendering without executing its CLI entry point.
 (
   # shellcheck disable=SC1090
-  source <(sed '$d' "$ROOT/sbox-manager.sh")
+  source "$ROOT/sbox-manager.sh"
   SERVER_CONF="$TMP/manager.json"
   printf '{"schema":1,"nodes":[]}' > "$TMP/nodes.json"
   render_server_config "$TMP/nodes.json" "$TMP/generated.json"

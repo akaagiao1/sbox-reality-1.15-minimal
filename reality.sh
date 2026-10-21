@@ -24,7 +24,7 @@ expected_sha256="${SBOX_REALITY_INSTALL_SHA256:-}"
 curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
   --connect-timeout 10 --max-time 60 \
   -o "$temporary_script" \
-  "https://raw.githubusercontent.com/akaagiao1/sbox-reality/${install_ref}/install.sh"
+  "https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/${install_ref}/install.sh"
 if [[ -n "$expected_sha256" ]]; then
   printf '%s  %s\n' "$expected_sha256" "$temporary_script" | sha256sum -c - >/dev/null || {
     echo "错误：install.sh SHA-256 校验失败" >&2

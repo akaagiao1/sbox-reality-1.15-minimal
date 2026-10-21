@@ -338,13 +338,10 @@ render_server_config() {
         (.inbounds // [])[]
         | select((.tag // "") as $tag | ($managed | index($tag)) == null)
       ] + $generated[0])
-      | .outbounds =
-          (if ((.outbounds // []) | length) > 0 then .outbounds
-           else [{type:"direct"}] end)
     ' "$SERVER_CONF" > "$output"
   else
     jq -n --slurpfile generated "$generated" \
-      '{inbounds:$generated[0], outbounds:[{type:"direct"}]}' > "$output"
+      '{inbounds:$generated[0]}' > "$output"
   fi
   rm -f "$generated"
 }

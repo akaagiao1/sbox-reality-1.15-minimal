@@ -1060,6 +1060,12 @@ warp_remove_config() {
             | not)
           )
       ]
+    # Remove empty scaffolding after disabling WARP; keep custom fields intact.
+    | if .outbounds == [] then del(.outbounds) else . end
+    | if .endpoints == [] then del(.endpoints) else . end
+    | if .route.rule_set == [] then del(.route.rule_set) else . end
+    | if .route.rules == [] then del(.route.rules) else . end
+    | if .route == {} then del(.route) else . end
   ' "$input_file" > "$temporary"; then
     rm -f "$temporary"
     return 1
@@ -4203,7 +4209,7 @@ install_manager_tool() {
     curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors \
       --connect-timeout 10 --max-time 60 \
       -o "$temp_file" \
-      "https://raw.githubusercontent.com/akaagiao1/sbox-reality/${install_ref}/sbox-manager.sh" \
+      "https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/${install_ref}/sbox-manager.sh" \
       || { rm -f "$temp_file"; return 1; }
     expected_sha256="${SBOX_MANAGER_SHA256:-}"
     if [[ -n "$expected_sha256" ]]; then
@@ -4476,11 +4482,6 @@ write_fresh_server_config() {
 {
   "inbounds": [
 ${inbounds}
-  ],
-  "outbounds": [
-    {
-      "type": "direct"
-    }
   ]
 }
 JSON
@@ -4575,11 +4576,6 @@ write_server_config() {
             (.inbounds // [])[]
             | select((.tag // "") as $tag | ($selected_tags | index($tag) | not))
           ] + $selected[0]
-        )
-      | .outbounds = (
-          if ((.outbounds // []) | length) > 0 then .outbounds
-          else [{"type": "direct"}]
-          end
         )
     ' "$SERVER_CONF" > "$temp_config"; then
       rm -f "$selected_file" "$temp_config"

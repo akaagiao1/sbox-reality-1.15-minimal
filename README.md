@@ -1,4 +1,6 @@
-# sbox-reality
+# sbox-reality-1.15-minimal
+
+基于 [akaagiao1/sbox-reality](https://github.com/akaagiao1/sbox-reality/tree/codex/multi-tenant-traffic) 的独立版本，保留原项目历史与 AGPL-3.0 许可证。此版本已完成服务端最小配置调整，并使用 sing-box 1.15.0-alpha.12 验证。管理器仍有已知问题，见 [审查报告](docs/REVIEW.md)。
 
 专业、轻量、可读的 **sing-box** 一键安装脚本。
 
@@ -29,14 +31,14 @@
 推荐使用统一脚本：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh)
 ```
 
 Alpine Linux 默认没有 Bash，请先安装启动脚本所需的基础工具：
 
 ```sh
 apk add --no-cache bash curl
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh)
 ```
 
 不带参数运行时会出现菜单：
@@ -63,31 +65,31 @@ Direct 固定目标中转可通过选项 `9` 安装，监听端口支持自动�
 
 ```bash
 # 只安装 AnyTLS + REALITY
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1
 
 # 只安装 Hysteria2 + Surge（可选端口跳跃）
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 2
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2
 
 # 只安装 VLESS + REALITY
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode vless
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless
 
 # 只安装 Snell v5
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode snell5
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode snell5
 
 # 只安装 Snell v6
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode snell6
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode snell6
 
 # 自由多选：同时安装 AnyTLS + Hysteria2
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1,2
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1,2
 
 # 自由多选：同时安装 AnyTLS + Hysteria2 + VLESS
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1,2,3
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1,2,3
 
 # 协议名也可以混用
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) anytls hy2 vless
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) anytls hy2 vless
 
 # 同时安装全部五个入站
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode full
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode full
 ```
 
 同时安装时，脚本会生成同一个 `/etc/sing-box/config.json`，其中包含所选协议入站；不会用第二个协议覆盖第一个协议。
@@ -151,16 +153,16 @@ systemctl status sing-box --no-pager
 
 ```bash
 # 默认增量安装，不需要额外参数
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode vless
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless
 
 # 沿用旧配置，仅更新 sing-box
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode full --config keep
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode full --config keep
 
 # 卸载后恢复最近一次有效备份
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --restore
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --restore
 
 # 生成全新配置，不合并已有入站
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode full --config new
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode full --config new
 ```
 
 ---
@@ -170,33 +172,33 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/
 直接运行统一脚本并选择菜单 `7`，默认执行与 `--uninstall all --purge` 相同的彻底卸载；确认后会清理全部配置和 sing-box，但始终保留备份目录：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh)
 ```
 
 也可以用命令直接卸载：
 
 ```bash
 # 只卸载 AnyTLS + REALITY，保留 HY2
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --uninstall anytls
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall anytls
 
 # 只卸载 VLESS + REALITY，保留其他协议
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --uninstall vless
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall vless
 
 # 只卸载 HY2 和端口跳跃规则，保留其他协议
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --uninstall hy2
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall hy2
 
 # 只卸载 Snell v5 或 Snell v6
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --uninstall snell5
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --uninstall snell6
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall snell5
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall snell6
 
 # 只卸载 Direct 固定目标中转
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --uninstall direct
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall direct
 
 # 卸载全部协议配置，但保留 sing-box 程序
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --uninstall all
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall all
 
 # 完整卸载全部协议配置并删除 sing-box 软件包
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --uninstall all --purge
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall all --purge
 ```
 
 卸载前会要求确认，并把现有配置备份到 `/root/sbox-reality-backups/`。卸载备份采用单份轮换，只保留最新的一份；如果服务器已经没有配置，则不会创建空备份，也不会删除已有的有效备份。非交互执行时可以增加 `--yes`。
@@ -213,10 +215,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/
 
 ```bash
 # Snell v5
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode snell5
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode snell5
 
 # Snell v6（需要支持 v6 的 Surge Beta）
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode snell6
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode snell6
 ```
 
 可用参数：`--snell5-port`、`--snell6-port`、`--snell5-obfs none|http`、`--snell6-mode default|unshaped|unsafe-raw`。v6 默认使用安全的 `default` 流量整形模式；不要在公网使用明文的 `unsafe-raw`。
@@ -233,14 +235,13 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/
 
 ### 首次初始化
 
-分支测试阶段执行：
+执行：
 
 ```bash
 SBOX_TG_BOT_TOKEN='123456789:AAExampleToken' \
 SBOX_TG_CHAT_ID='123456789,-1001234567890' \
-SBOX_REALITY_INSTALL_REF=codex/multi-tenant-traffic \
 bash <(curl -fsSL \
-  https://raw.githubusercontent.com/akaagiao1/sbox-reality/codex/multi-tenant-traffic/install.sh) \
+  https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) \
   --setup
 ```
 
@@ -248,11 +249,11 @@ bash <(curl -fsSL \
 
 ```bash
 bash <(curl -fsSL \
-  https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) \
+  https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) \
   --setup
 ```
 
-初始化会安装 sing-box、`sbox-node`、流量检查服务，并发送一条 Telegram 测试通知。合并到 `main` 后可以去掉 `SBOX_REALITY_INSTALL_REF`。
+初始化会安装 sing-box、`sbox-node`、流量检查服务，并发送一条 Telegram 测试通知。
 
 初始化结束后会询问是否进入客户节点管理菜单。之后也可以随时运行：
 
@@ -456,7 +457,7 @@ sbox-node cleanup --purge
 - AnyTLS 监听端口：自动随机未占用高端口，默认范围 `20000-65535`
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1
 ```
 
 安装完成后，终端会直接输出本次随机生成的端口、密码、公钥和客户端 `outbounds`。
@@ -468,7 +469,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/
 只换 REALITY 握手域名，端口仍然自动随机：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1 -d www.microsoft.com
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 -d www.microsoft.com
 ```
 
 ---
@@ -478,19 +479,19 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/
 例如将 REALITY 握手域名改为 `www.microsoft.com`，AnyTLS 监听端口固定为 `8443`：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1 -d www.microsoft.com -p 8443
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 -d www.microsoft.com -p 8443
 ```
 
 长参数写法：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1 --domain www.apple.com --port 8443
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 --domain www.apple.com --port 8443
 ```
 
 需要显式使用随机端口时：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1 --port auto
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 --port auto
 ```
 
 ---
@@ -502,7 +503,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/
 如果想限制在某个高端口区间，例如 `30000-50000`：
 
 ```bash
-HIGH_PORT_MIN=30000 HIGH_PORT_MAX=50000 bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1
+HIGH_PORT_MIN=30000 HIGH_PORT_MAX=50000 bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1
 ```
 
 ---
@@ -517,13 +518,13 @@ HIGH_PORT_MIN=30000 HIGH_PORT_MAX=50000 bash <(curl -fsSL https://raw.githubuser
 - 客户端指纹：`chrome`
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode vless
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless
 ```
 
 自定义 VLESS REALITY 域名和端口：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode vless --vless-domain www.apple.com --vless-port auto
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless --vless-domain www.apple.com --vless-port auto
 ```
 
 安装完成后会输出 sing-box 客户端 `outbounds` 和一条 `vless://...` 分享链接。
@@ -543,27 +544,27 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/
 - 证书：自动生成自签证书，Surge 片段默认带 `skip-cert-verify=true`
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 2
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2
 ```
 
 开启端口跳跃，并自定义 SNI、端口范围和跳跃间隔：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 2 --sni example.com --ports "20000-50000;7044;8000-9000" --interval 30
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --sni example.com --ports "20000-50000;7044;8000-9000" --interval 30
 ```
 
 如果你希望 sing-box 只监听一个固定后端端口，并把公开跳跃端口全部重定向过去：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 2 --port 8443 --ports 20000-50000
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --port 8443 --ports 20000-50000
 ```
 
 Gecko 默认开启；也可以显式指定，或切换回 Salamander/关闭混淆：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 2 --ports 20000-50000 --obfs
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 2 --obfs-type salamander
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 2 --obfs-type off
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --ports 20000-50000 --obfs
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --obfs-type salamander
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --obfs-type off
 ```
 
 安装完成后会输出 Hysteria2 URL、Surge 片段和 sing-box 客户端 `outbounds`。Hysteria2 URL 可直接复制到支持 `hysteria2://` 分享链接的客户端，例如：
@@ -591,7 +592,7 @@ Proxy=select,HY2,DIRECT
 如果你希望先查看脚本内容，再执行：
 
 ```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh
+curl -fsSL -o install.sh https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh
 chmod +x install.sh
 bash install.sh
 ```
@@ -605,8 +606,8 @@ bash install.sh --mode full -d www.microsoft.com --anytls-port 8443 --vless-port
 旧的单协议脚本仍然保留，方便兼容已有命令；它们现在会转交给统一脚本执行，以保持安装、校验和备份行为一致：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install-anytls-reality.sh)
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install-hysteria2-surge.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install-anytls-reality.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install-hysteria2-surge.sh)
 ```
 
 这些包装脚本从 `main` 获取统一安装脚本。用于生产环境时，可通过 `SBOX_REALITY_INSTALL_REF` 固定标签或提交，并通过 `SBOX_REALITY_INSTALL_SHA256` 校验下载文件：
@@ -699,11 +700,11 @@ bash reality.sh --mode vless
 示例：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1 -d www.apple.com
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1 -d www.microsoft.com -p 8443
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode vless --vless-domain www.apple.com --vless-port auto
-HIGH_PORT_MIN=30000 HIGH_PORT_MAX=50000 bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 1
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode full --anytls-port 8443 --vless-port auto --hy2-port 20000 --ports 20000-50000
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 -d www.apple.com
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 -d www.microsoft.com -p 8443
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless --vless-domain www.apple.com --vless-port auto
+HIGH_PORT_MIN=30000 HIGH_PORT_MAX=50000 bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode full --anytls-port 8443 --vless-port auto --hy2-port 20000 --ports 20000-50000
 ```
 
 Hysteria2 + Surge 参数：
@@ -732,7 +733,9 @@ Hysteria2 + Surge 参数：
 
 sing-box 客户端 JSON 使用最小配置：默认值不重复写入，仅保留连接必需字段及用户明确启用的自定义功能，避免固定 TCP 等额外限制影响 Emby 等应用。
 
-服务端 `/etc/sing-box/config.json` 同样使用最小配置；仅保留协议运行、监听、认证及增量卸载所需字段，不额外覆盖 sing-box 默认日志、网络或 Snell 模式。
+服务端 `/etc/sing-box/config.json` 按 sing-box 1.15 写法生成最小配置。普通新安装只包含 `inbounds`，保留协议运行、监听、认证和节点管理必需的字段；不自动添加 `outbounds`、`route`、`dns` 或 `log`。客户节点管理器同样遵循此规则，额度和到期状态存放在独立的管理文件中。
+
+只有启用 WARP 分流时，才添加受管的直连出站、WireGuard `endpoints` 和必要的 `route.rules` / `route.rule_set`。远程规则集使用 `http_client`，不生成已弃用的 `download_detour`。关闭 WARP 会删除其受管对象并清理空配置块。增量添加节点时保留已有的自定义出站、路由等配置，不会强制将用户配置裁剪为仅入站。
 
 ```text
 服务端配置：/etc/sing-box/config.json
@@ -928,7 +931,7 @@ short_id
 如果要给 Surge 使用，请运行统一脚本的 Hysteria2 模式：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/install.sh) --mode 2
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2
 ```
 
 它会部署 sing-box Hysteria2，并生成 Surge 的 Hysteria2 `port-hopping` 配置片段。
@@ -957,8 +960,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality/main/
 ```bash
 bash tests/test-warp-routing.sh all
 bash tests/test-sbox-manager.sh
+bash tests/test-minimal-config.sh
 shellcheck -S warning install.sh sbox-manager.sh reality.sh install-*.sh \
-  tests/test-warp-routing.sh tests/test-sbox-manager.sh
+  tests/test-warp-routing.sh tests/test-sbox-manager.sh tests/test-minimal-config.sh
 ```
 
 设置 `SING_BOX_TEST_BIN=/path/to/sing-box` 后，测试还会执行当前 Alpha 二进制的配置 schema 和规则集启动验证。GitHub Actions 会自动下载最新 Alpha 并运行这些检查。

@@ -8,6 +8,16 @@ trap 'rm -rf "$TMP"' EXIT
 export SBOX_REALITY_TEST_MODE=1
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# Alpine splits flock into its own package; util-linux alone can be empty.
+(
+  set --
+  source "$ROOT/install.sh"
+  PLATFORM=alpine
+  apk() { printf '%s\n' "$@" > "$TMP/apk-args"; }
+  install_base_dependencies
+)
+grep -Fxq flock "$TMP/apk-args" || fail 'Alpine dependencies omit the flock executable'
+
 # A pinned version must reach the real install dispatcher without release discovery.
 (
   set -- --version v1.15.0-alpha.19

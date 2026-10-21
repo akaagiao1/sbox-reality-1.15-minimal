@@ -4224,7 +4224,7 @@ install_sing_box_alpine() {
 install_base_dependencies() {
   echo "正在安装基础依赖……"
   if [[ "$PLATFORM" == "alpine" ]]; then
-    apk add --no-cache bash curl git openssl ca-certificates iproute2 coreutils jq nftables iptables conntrack-tools openrc util-linux
+    apk add --no-cache bash curl git openssl ca-certificates iproute2 coreutils jq nftables iptables conntrack-tools openrc flock
   else
     apt update
     DEBIAN_FRONTEND=noninteractive apt install -y \

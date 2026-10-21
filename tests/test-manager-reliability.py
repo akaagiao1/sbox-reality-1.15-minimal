@@ -270,7 +270,8 @@ traffic_current_bytes alice
 
     def test_daemon_sleep_does_not_hold_lock(self):
         marker = self.base / "sleeping"
-        process = self.start('marker=$1; sleep() { touch "$marker"; command sleep 60; }; '
+        # OpenRC can launch a daemon while the timer installer owns fd 9.
+        process = self.start('acquire_lock; marker=$1; sleep() { touch "$marker"; command sleep 60; }; '
                              'main traffic daemon', str(marker))
         self.wait_for_file(marker, process)
         self.assert_lock_free()

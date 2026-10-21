@@ -189,8 +189,8 @@ service_restart() {
     systemctl status sing-box --no-pager >&2 || true
     return 1
   elif command -v rc-service >/dev/null 2>&1; then
-    rc-service sing-box restart >/dev/null 2>&1 \
-      || rc-service sing-box start >/dev/null 2>&1 \
+    rc-service sing-box restart 9>&- >/dev/null 2>&1 \
+      || rc-service sing-box start 9>&- >/dev/null 2>&1 \
       || return 1
     for _ in {1..10}; do
       rc-service sing-box status >/dev/null 2>&1 && return 0
@@ -1637,12 +1637,14 @@ error_log="/var/log/sbox-traffic.log"
 EOF
     chmod 755 /etc/init.d/sbox-traffic
     rc-update add sbox-traffic default >/dev/null 2>&1 || true
-    rc-service sbox-traffic restart >/dev/null 2>&1 \
-      || rc-service sbox-traffic start >/dev/null 2>&1 || true
+    rc-service sbox-traffic restart 9>&- >/dev/null 2>&1 \
+      || rc-service sbox-traffic start 9>&- >/dev/null 2>&1 || true
   fi
 }
 
 traffic_daemon() {
+  # An OpenRC launcher may have inherited the timer installer's lock fd.
+  exec 9>&-
   trap 'exit 0' INT TERM
   while true; do
     # A separate invocation keeps errexit effective and owns its lock only

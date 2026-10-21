@@ -1,975 +1,114 @@
 # sbox-reality-1.15-minimal
 
-基于 [akaagiao1/sbox-reality](https://github.com/akaagiao1/sbox-reality/tree/codex/multi-tenant-traffic) 的独立版本，保留原项目历史与 AGPL-3.0 许可证。此版本已完成服务端最小配置调整，并使用 sing-box 1.15.0-alpha.12 验证。管理器仍有已知问题，见 [审查报告](docs/REVIEW.md)。
+用于 **多用户、多协议节点管理** 的 sing-box 脚本。每个节点有独立端口、凭据、流量额度和到期时间；同一用户可以创建多个协议节点。
 
-专业、轻量、可读的 **sing-box** 一键安装脚本。
+支持 Debian / Ubuntu 和 Alpine，使用 root 运行。当前配置已在 sing-box **1.15.0-alpha.12** 验证，安装时获取最新 Alpha。
 
-支持：
-
-- **AnyTLS + REALITY**
-- **VLESS + REALITY**
-- **Hysteria2 + Surge 端口跳跃**
-- **Snell v5（Surge）**
-- **Snell v6（Surge Beta）**
-- **Direct 固定目标中转**
-- **Cloudflare WARP 按 geosite 规则分流**
-- **同时安装多个入站到同一个 sing-box 配置**
-- **多客户独立节点：同一协议可创建多个端口和凭据**
-- **按节点流量额度、月度重置和到期自动暂停**
-- **Telegram 额度与到期提醒**
-- **默认开启 BBR + fq，并写入持久化 sysctl 配置**
-- **按协议卸载、保留配置重装或生成全新配置**
-
-本项目支持 Debian、Ubuntu 和 Alpine Linux VPS，默认自动选择一个当前未被占用的随机高端口，完成服务端部署，并生成可直接合并到客户端配置中的 `outbounds` 片段。
-
-脚本每次安装都会自动选择 sing-box 最新 Alpha 版本，不再固定版本系列，也不会回退到正式版、RC 或 Beta。
-
----
-
-## 统一一键安装
-
-推荐使用统一脚本：
+## 首次安装
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --setup
 ```
 
-Alpine Linux 默认没有 Bash，请先安装启动脚本所需的基础工具：
+Alpine 先执行 `apk add --no-cache bash curl`。
 
-```sh
-apk add --no-cache bash curl
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh)
-```
-
-不带参数运行时会出现菜单：
-
-```text
-1) 安装 AnyTLS + REALITY
-2) 安装 Hysteria2 + Surge（可选端口跳跃）
-3) 安装 VLESS + REALITY
-4) 安装 Snell v5
-5) 安装 Snell v6
-6) 同时安装全部五种协议
-7) 彻底卸载全部配置和 sing-box（保留备份）
-8) 恢复最新备份
-9) 安装 Direct 固定目标中转
-```
-
-菜单支持自由多选安装协议：例如输入 `1,2` 会同时安装 AnyTLS 和 Hysteria2；输入 `1,2,3` 会同时安装 AnyTLS、Hysteria2 和 VLESS。也支持中文逗号 `1，2，3`。
-
-Direct 固定目标中转可通过选项 `9` 安装，监听端口支持自动选择随机高端口或手动指定，目标地址和目标端口必须由用户填写。配置不写入 `network` 字段，使用 sing-box 默认网络行为；该入站不提供加密或认证，请只向可信来源开放。
-
-选择安装协议后，脚本还会询问端口方式：输入 `1` 或直接回车自动选择未占用的高端口；输入 `2` 可手动填写 NAT 机器映射给你的自定义端口。自定义端口已被占用时会提示改用其他端口；一次安装多个协议时会分别询问各协议端口。
-
-也可以直接指定安装模式：
-
-```bash
-# 只安装 AnyTLS + REALITY
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1
-
-# 只安装 Hysteria2 + Surge（可选端口跳跃）
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2
-
-# 只安装 VLESS + REALITY
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless
-
-# 只安装 Snell v5
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode snell5
-
-# 只安装 Snell v6
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode snell6
-
-# 自由多选：同时安装 AnyTLS + Hysteria2
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1,2
-
-# 自由多选：同时安装 AnyTLS + Hysteria2 + VLESS
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1,2,3
-
-# 协议名也可以混用
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) anytls hy2 vless
-
-# 同时安装全部五个入站
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode full
-```
-
-同时安装时，脚本会生成同一个 `/etc/sing-box/config.json`，其中包含所选协议入站；不会用第二个协议覆盖第一个协议。
-
----
-
-## Cloudflare WARP 按规则分流
-
-安装协议时可以同时指定一个或多个服务名。例如下面的命令会让 YouTube 和 Netflix 流量走 Cloudflare WARP，其他流量继续使用原有路由：
-
-```bash
-bash install.sh --mode anytls --warp-rules youtube,netflix
-```
-
-已有 sing-box 配置时，不需要重装协议也能单独更新：
-
-```bash
-# 用完整新列表覆盖旧的 WARP 规则列表
-bash install.sh --warp-rules youtube,openai
-
-# 关闭 WARP 分流，但保留已注册凭据
-bash install.sh --warp-off
-
-# 重新向 Cloudflare 注册凭据，并沿用当前规则
-bash install.sh --warp-reset
-
-# 重新注册凭据，同时覆盖规则列表
-bash install.sh --warp-reset --warp-rules netflix
-```
-
-不带参数交互安装时，脚本也会询问是否启用 WARP。规则名支持英文逗号、中文逗号、顿号、分号或空格分隔，并会自动转为小写和去重。再次设置采用完整列表覆盖语义：原来是 `youtube,netflix`，再次输入 `openai` 后只保留 OpenAI。
-
-规则来自 [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat/tree/sing) 的 `sing/geo-lite/geosite` 二进制规则集。例如 `youtube` 对应 `geo-lite/geosite/youtube.srs`。sing-box 通过脚本管理的 `sbox-warp-direct` 直连出口下载这些规则，匹配后转到 `sbox-warp-out` WireGuard endpoint；未匹配流量的 `route.final` 和现有自定义规则保持原样。
-
-规则下载使用 sing-box 1.14+ 的 `http_client`，直连出口连接超时为 15 秒。旧版生成的 `download_detour` 会在重新设置 WARP 分流时升级。如果日志提示 `ENABLE_DEPRECATED_LEGACY_RULE_SET_DOWNLOAD_DETOUR`，请下载最新版脚本并执行 `bash install.sh --warp-rules youtube`，即可复用现有凭据、升级 YouTube 规则下载配置并重启服务。
-
-首次启用会注册一份免费 WARP 设备凭据，后续修改规则直接复用。凭据保存在 `/etc/sing-box/sbox-warp-credentials.credentials`，权限为 `600`，备份和恢复配置时会一起处理。该文件包含 WARP 私钥，请勿上传、公开或复制到日志中。只有 `--warp-reset` 会主动注册新凭据；`--warp-off` 会保留旧凭据，完整卸载 sing-box 才会删除。
-
-凭据使用非 `.json` 后缀，避免服务通过 `sing-box -C /etc/sing-box` 加载目录时把凭据误读为配置。新版脚本会自动迁移旧的 `sbox-warp-credentials.json`，旧备份中的凭据也会恢复到新文件名。如果旧版已出现 `unknown field "schema"` 并反复重启，可先恢复服务：
-
-```bash
-mv -n /etc/sing-box/sbox-warp-credentials.json /etc/sing-box/sbox-warp-credentials.credentials
-systemctl restart sing-box
-systemctl status sing-box --no-pager
-```
-
----
-
-## 增量安装、重装与恢复
-
-服务器上已经存在 `/etc/sing-box/config.json` 时，脚本默认不再询问“保留旧配置还是生成新配置”，而是直接增量追加本次选择的协议。
-
-例如先安装 `1`，再安装 `2`，之后再安装 `3`，最终会在同一份配置里依次保留 AnyTLS、Hysteria2 和 VLESS，不会覆盖前面已经安装的协议。
-
-- 增量安装：默认行为。保留已有入站，只新增或刷新本次选择的协议入站。
-- 保留当前配置：完整保留当前服务端配置和客户端文件，只更新 sing-box；本次输入的新协议参数不会覆盖旧配置。
-- 生成新配置：不合并已有入站，直接生成本次选择的协议配置。
-- 恢复备份：还原卸载前保存的服务端配置、端口、密码、密钥、客户端文件、证书和 HY2 端口跳跃配置。
-
-也可以直接指定，适合非交互执行：
-
-```bash
-# 默认增量安装，不需要额外参数
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless
-
-# 沿用旧配置，仅更新 sing-box
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode full --config keep
-
-# 卸载后恢复最近一次有效备份
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --restore
-
-# 生成全新配置，不合并已有入站
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode full --config new
-```
-
----
-
-## 卸载
-
-直接运行统一脚本并选择菜单 `7`，默认执行与 `--uninstall all --purge` 相同的彻底卸载；确认后会清理全部配置和 sing-box，但始终保留备份目录：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh)
-```
-
-也可以用命令直接卸载：
-
-```bash
-# 只卸载 AnyTLS + REALITY，保留 HY2
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall anytls
-
-# 只卸载 VLESS + REALITY，保留其他协议
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall vless
-
-# 只卸载 HY2 和端口跳跃规则，保留其他协议
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall hy2
-
-# 只卸载 Snell v5 或 Snell v6
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall snell5
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall snell6
-
-# 只卸载 Direct 固定目标中转
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall direct
-
-# 卸载全部协议配置，但保留 sing-box 程序
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall all
-
-# 完整卸载全部协议配置并删除 sing-box 软件包
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --uninstall all --purge
-```
-
-卸载前会要求确认，并把现有配置备份到 `/root/sbox-reality-backups/`。卸载备份采用单份轮换，只保留最新的一份；如果服务器已经没有配置，则不会创建空备份，也不会删除已有的有效备份。非交互执行时可以增加 `--yes`。
-
-只卸载一个协议时，脚本先备份完整配置，再只删除对应的 `anytls-in`、`vless-in`、`hy2-in`、`snell5-in`、`snell6-in` 或 `direct-in`，其他入站会继续运行。选择 `all` 时不再依赖入站 tag，而是备份后直接删除全部 sing-box 配置目录和客户端文件。
-
-使用 `--uninstall all --purge` 时还会清理其他脚本常用的 sing-box 安装位置，包括 `/usr/bin/sing-box`、`/usr/local/bin/sing-box`、`/opt/sing-box`、systemd/OpenRC 服务、配置目录、运行数据、日志、cron 和 logrotate 文件。备份目录 `/root/sbox-reality-backups/` 明确排除，始终保留。脚本不会执行危险的全盘模糊删除，避免误删名称中偶然包含 `sing-box` 的个人文件。
-
----
-
-## Snell v5 / v6
-
-脚本使用 sing-box 最新 Alpha 版本提供 Snell 服务端，两个版本均默认选择未占用的随机 TCP 高端口，并生成 Surge 配置片段：
-
-```bash
-# Snell v5
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode snell5
-
-# Snell v6（需要支持 v6 的 Surge Beta）
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode snell6
-```
-
-可用参数：`--snell5-port`、`--snell6-port`、`--snell5-obfs none|http`、`--snell6-mode default|unshaped|unsafe-raw`。v6 默认使用安全的 `default` 流量整形模式；不要在公网使用明文的 `unsafe-raw`。
-
-生成的 Snell v5/v6 节点默认开启 TCP Fast Open 和连接复用：Surge 使用 `tfo=true,reuse=true`，sing-box 客户端使用 `tcp_fast_open: true`、`reuse: true`，服务端同时开启 TCP Fast Open。约定格式 URL 也携带 `tfo=true&reuse=true`；导入支持情况取决于客户端。
-
-所有客户端文件统一保存在 `/root/sing-box/`。sing-box 的 Snell v5 不包含官方 v5 QUIC Proxy，Surge 中的普通 TCP Snell 可以正常使用。
-
----
-
-## 多客户节点、流量和到期管理
-
-推荐流程是：首次先初始化 VPS、安装节点管理器并配置一次 Telegram；之后每增加一个客户，只创建该客户的节点、额度、重置日和到期时间。
-
-### 首次初始化
-
-执行：
-
-```bash
-SBOX_TG_BOT_TOKEN='123456789:AAExampleToken' \
-SBOX_TG_CHAT_ID='123456789,-1001234567890' \
-bash <(curl -fsSL \
-  https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) \
-  --setup
-```
-
-也可以交互输入 Telegram Token 和 Chat ID：
-
-```bash
-bash <(curl -fsSL \
-  https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) \
-  --setup
-```
-
-初始化会安装 sing-box、`sbox-node`、流量检查服务，并发送一条 Telegram 测试通知。
-
-初始化结束后会询问是否进入客户节点管理菜单。之后也可以随时运行：
+按提示配置 Telegram，然后运行管理菜单：
 
 ```bash
 sbox-node
 ```
 
-菜单会逐项询问客户 ID、协议、端口、每月额度、重置日和到期时间，不需要一次输入长命令。菜单还支持查看节点、修改额度、续期、重置流量、暂停、恢复、删除和 Telegram 测试。
+日常操作都在菜单中完成：添加用户节点、查看客户端配置、调整额度、续期、暂停、恢复和删除。
 
-### 初始化后添加客户
+## 添加用户节点
 
-首次初始化完成后，不再需要 TG 参数：
-
-```bash
-sbox-node node add customer-a snell5 \
-  --customer customer-a \
-  --port 25001 \
-  --quota 100G \
-  --reset-day 1 \
-  --expires 2026-12-31
-
-sbox-node node add customer-b snell6 \
-  --customer customer-b \
-  --port 25002 \
-  --quota 50G \
-  --expires 2026-11-30
-```
-
-如果希望“安装环境并同时创建第一个客户”一步完成，`install.sh --customer ... --mode ...` 的兼容入口仍然保留。已有客户、WARP、路由和自定义入站不会被覆盖。
-
-统一安装脚本不会覆盖已有配置。管理命令会安装到：
-
-```text
-/usr/local/sbin/sbox-node
-/usr/local/sbin/sbox-traffic
-```
-
-后续管理使用：
+推荐使用菜单选项 **1**。命令行示例：
 
 ```bash
-sbox-node node list
-sbox-node traffic show
+# 同一用户创建 Snell v6 和 VLESS 两个节点
+sbox-node node add alice-snell6 snell6 --customer alice --port auto \
+  --quota 100G --reset-day 1 --expires 2026-12-31
+
+sbox-node node add alice-vless vless --customer alice --port auto \
+  --quota 100G --reset-day 1 --expires 2026-12-31
 ```
 
-### 命令行创建更多客户节点
+`alice` 是用户 ID；`alice-snell6`、`alice-vless` 是唯一的节点 ID。**额度按节点分别统计，不合并为用户总额度**，统计上行与下行总流量，月度重置日支持 `1–28`。额度用完或到期会暂停该节点。
 
-```bash
-# 客户A，Snell v5，独立端口、PSK、100GB/月
-sbox-node node add cust-a snell5 \
-  --customer cust-a \
-  --port 24001 \
-  --quota 100G \
-  --reset-day 1 \
-  --expires 2026-12-31
+| 协议参数 | sing-box 客户端 | Surge |
+| --- | --- | --- |
+| `snell5` | 支持 | 支持 |
+| `snell6` | 支持 | 需要支持 v6 的版本 |
+| `hy2` | 支持 | 支持 |
+| `anytls` | AnyTLS + REALITY | 不支持该组合 |
+| `vless` | VLESS + REALITY | 不支持 |
+| `direct` | 固定目标中转，不生成客户端代理配置 | — |
 
-# 客户B，Snell v6，独立节点
-sbox-node node add cust-b snell6 \
-  --customer cust-b \
-  --port 24002 \
-  --quota 50G \
-  --reset-day 15 \
-  --expires 2026-11-30
+## 查看用户配置
 
-# 客户C，AnyTLS + REALITY
-sbox-node node add cust-c anytls \
-  --customer cust-c \
-  --port auto \
-  --quota 200G \
-  --expires 2027-01-31
+菜单选项 **2：查看所有节点 / 客户端配置**，然后选择节点，即可复制该节点的 Surge、sing-box 配置和分享链接。输入 `0` 返回。
 
-# 客户D，VLESS + REALITY
-sbox-node node add cust-d vless \
-  --customer cust-d \
-  --port auto \
-  --quota 200G \
-  --expires 2027-01-31
-
-# 客户E，Hysteria2
-sbox-node node add cust-e hy2 \
-  --customer cust-e \
-  --port auto \
-  --quota 500G \
-  --expires 2027-01-31
-
-# Direct 固定目标中转
-sbox-node node add cust-f direct \
-  --customer cust-f \
-  --port auto \
-  --target 1.1.1.1 \
-  --target-port 53
-```
-
-查看和管理：
+也可以直接查看：
 
 ```bash
 sbox-node node list
-sbox-node node show cust-a
-sbox-node node clients cust-a
-sbox-node node port cust-a 24011
-sbox-node node disable cust-a
-sbox-node node enable cust-a
-sbox-node node remove cust-a
+sbox-node node clients alice-snell6
 ```
 
-客户文件单独保存，避免把一个客户的凭据发给另一个客户：
+查看优先使用已保存的配置，不改变凭据。需要重新生成文件时：
+
+```bash
+sbox-node node regen alice-snell6
+```
+
+每个节点的文件单独保存在：
 
 ```text
 /root/sbox-reality/clients/<节点ID>/
   sing-box.json
+  surge.conf       # 支持 Surge 的协议
   url.txt
-  surge.conf
   info.txt
 ```
 
-其中 Hysteria2 节点的证书和私钥也保存在该客户目录中。
+sing-box 输出是 `outbounds` 片段，合并到客户端原配置中即可。配置包含连接凭据，请按用户分别分发。
 
-### 修改额度、重置和到期时间
-
-```bash
-sbox-node traffic set cust-a --quota 200G --reset-day 1
-sbox-node traffic set cust-a --expires 2027-03-31
-sbox-node traffic show
-sbox-node traffic show cust-a
-sbox-node traffic reset cust-a
-sbox-node traffic pause cust-a
-sbox-node traffic resume cust-a
-sbox-node traffic unset cust-a
-```
-
-流量统计和限制按节点端口单独执行，使用专用 `SBOX_TRF` iptables/ip6tables 计数链。额度用完或到期时，只拒绝目标节点端口并清理该端口已建立连接，不重启 sing-box，不影响其他客户节点和 WARP。
-
-限制状态保存在：
-
-```text
-/etc/sbox-reality/nodes.json
-/etc/sbox-reality/traffic/state.json
-```
-
-每月重置日支持 `1-28`。建议按“上行 + 下行总流量”计费，这也是当前实现的统计方式。
-
-### Telegram 通知
-
-保存 Bot Token 和一个或多个 Chat ID：
+## 日常管理
 
 ```bash
-sbox-node notify setup '123456789:AAExampleToken' '123456789,-1001234567890'
-sbox-node notify test
+sbox-node traffic show                              # 查看流量和到期状态
+sbox-node traffic set alice-snell6 --quota 200G      # 修改额度
+sbox-node traffic set alice-snell6 --expires 2027-03-31 # 续期
+sbox-node traffic reset alice-snell6                 # 重置已用流量
+sbox-node traffic pause alice-snell6                 # 手动暂停
+sbox-node traffic resume alice-snell6                # 取消手动暂停
+sbox-node node port alice-snell6 25001                # 修改端口
+sbox-node node remove alice-snell6                    # 删除节点
+sbox-node notify test                                # 测试 Telegram
 ```
 
-通知配置保存在权限为 `600` 的：
-
-```text
-/etc/sbox-reality/notify.env
-```
-
-私聊时先给 Bot 发送 `/start`；群通知需要先把 Bot 加入群，并把群 Chat ID 填入配置。多个 Chat ID 用英文逗号分隔。
-
-自动通知包括：
-
-- 流量达到 80%
-- 流量额度用完、节点暂停
-- 到期前 7 天、3 天、1 天
-- 节点到期、节点暂停
-- 月度额度重置或续期后恢复
-
-到期和流量检查在 systemd 环境每分钟运行一次；Alpine/OpenRC 使用后台检查服务。通知发送失败不会阻止节点暂停或恢复。
-
-### 导入已有节点
-
-已有旧版脚本生成节点可以先导入管理状态：
+Telegram 配置只需保存一次，支持多个 Chat ID：
 
 ```bash
-sbox-node node migrate
+sbox-node notify setup 'BOT_TOKEN' 'CHAT_ID_1,CHAT_ID_2'
 ```
 
-会识别 `snell5-in`、`snell6-in`、`anytls-in`、`vless-in`、`hy2-in` 和 `direct-in`，并转换为默认客户节点。REALITY 节点的公钥无法从私钥单独重建，迁移时不会伪造客户端密钥，原有 `/root/sing-box/` 客户端文件继续有效。新客户节点会生成完整的新客户端文件。
+通知包括额度达到 80%、额度用完、到期提醒及恢复可用。VPS 防火墙和云安全组需放行节点端口。
 
-### 卸载
+## 可选 WARP 分流
 
-仅移除流量、到期检查和管理状态，不删除 sing-box：
-
-```bash
-sbox-node cleanup
-```
-
-完整清除管理命令、状态和客户端目录：
-
-```bash
-sbox-node cleanup --purge
-```
-
-统一脚本的 `--uninstall all` 也会清理这些资源。
-
----
-
-## AnyTLS + REALITY
-
-默认配置：
-
-- REALITY 握手域名：`www.apple.com`
-- AnyTLS 监听端口：自动随机未占用高端口，默认范围 `20000-65535`
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1
-```
-
-安装完成后，终端会直接输出本次随机生成的端口、密码、公钥和客户端 `outbounds`。
-
----
-
-## 自定义域名
-
-只换 REALITY 握手域名，端口仍然自动随机：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 -d www.microsoft.com
-```
-
----
-
-## 手动指定端口
-
-例如将 REALITY 握手域名改为 `www.microsoft.com`，AnyTLS 监听端口固定为 `8443`：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 -d www.microsoft.com -p 8443
-```
-
-长参数写法：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 --domain www.apple.com --port 8443
-```
-
-需要显式使用随机端口时：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 --port auto
-```
-
----
-
-## 自定义随机端口范围
-
-默认随机范围是 `20000-65535`。
-
-如果想限制在某个高端口区间，例如 `30000-50000`：
-
-```bash
-HIGH_PORT_MIN=30000 HIGH_PORT_MAX=50000 bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1
-```
-
----
-
-## VLESS + REALITY
-
-默认配置：
-
-- REALITY 握手域名：`www.apple.com`
-- VLESS 监听端口：自动随机未占用高端口，默认范围 `20000-65535`
-- Flow：`xtls-rprx-vision`
-- 客户端指纹：`chrome`
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless
-```
-
-自定义 VLESS REALITY 域名和端口：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless --vless-domain www.apple.com --vless-port auto
-```
-
-安装完成后会输出 sing-box 客户端 `outbounds` 和一条 `vless://...` 分享链接。
-
----
-
-## Hysteria2 + Surge（可选端口跳跃）
-
-默认配置：
-
-- TLS SNI：`www.bing.com`
-- 端口跳跃：默认不开启，使用随机未占用 UDP 高端口
-- 开启跳跃后：可选默认 `20000-50000`，或分别输入起始、结束端口
-- sing-box 实际监听端口：跳跃时默认使用范围的第一个端口
-- Surge 端口跳跃间隔：`30` 秒
-- Hysteria2 Gecko 混淆：默认开启，包长范围 `512-1200`
-- 证书：自动生成自签证书，Surge 片段默认带 `skip-cert-verify=true`
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2
-```
-
-开启端口跳跃，并自定义 SNI、端口范围和跳跃间隔：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --sni example.com --ports "20000-50000;7044;8000-9000" --interval 30
-```
-
-如果你希望 sing-box 只监听一个固定后端端口，并把公开跳跃端口全部重定向过去：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --port 8443 --ports 20000-50000
-```
-
-Gecko 默认开启；也可以显式指定，或切换回 Salamander/关闭混淆：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --ports 20000-50000 --obfs
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --obfs-type salamander
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2 --obfs-type off
-```
-
-安装完成后会输出 Hysteria2 URL、Surge 片段和 sing-box 客户端 `outbounds`。Hysteria2 URL 可直接复制到支持 `hysteria2://` 分享链接的客户端，例如：
-
-```text
-hysteria2://auto-generated-password@1.2.3.4:20000-50000/?insecure=1&sni=www.bing.com&obfs=gecko&obfs-password=自动生成#HY2
-```
-
-Surge 片段示例：
-
-```ini
-[Proxy]
-HY2=hysteria2,你的VPS_IP,20000,password="自动生成",port-hopping="20000-50000",gecko-password="自动生成",sni="www.bing.com",skip-cert-verify=true,tfo=false
-
-[Proxy Group]
-Proxy=select,HY2,DIRECT
-```
-
-脚本会为 sing-box 创建 Hysteria2 入站，并通过 nftables 或 iptables 给 UDP 跳跃端口做本机重定向。VPS 防火墙或云厂商安全组需要放行脚本输出的 UDP 跳跃端口范围；如果本机防火墙按重定向后的端口过滤，也要放行 sing-box 实际监听端口。
-
----
-
-## 安全执行方式
-
-如果你希望先查看脚本内容，再执行：
+下载脚本后配置规则；不需要重装客户节点：
 
 ```bash
 curl -fsSL -o install.sh https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh
-chmod +x install.sh
-bash install.sh
+bash install.sh --warp-rules youtube,netflix
+bash install.sh --warp-off
 ```
 
-带参数执行：
+规则来自 [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat/tree/sing)，WARP 私钥保存在 `/etc/sing-box/sbox-warp-credentials.credentials`。
 
-```bash
-bash install.sh --mode full -d www.microsoft.com --anytls-port 8443 --vless-port auto --hy2-port 20000 --ports 20000-50000
-```
+普通新配置只生成 `inbounds`；启用 WARP 时才增加必要的出站、WireGuard endpoint 和路由。增量操作保留已有自定义配置。
 
-旧的单协议脚本仍然保留，方便兼容已有命令；它们现在会转交给统一脚本执行，以保持安装、校验和备份行为一致：
+管理状态位于 `/etc/sbox-reality/`，服务端配置位于 `/etc/sing-box/config.json`。已知限制见 [审查报告](docs/REVIEW.md)。
 
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install-anytls-reality.sh)
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install-hysteria2-surge.sh)
-```
-
-这些包装脚本从 `main` 获取统一安装脚本。用于生产环境时，可通过 `SBOX_REALITY_INSTALL_REF` 固定标签或提交，并通过 `SBOX_REALITY_INSTALL_SHA256` 校验下载文件：
-
-```bash
-SBOX_REALITY_INSTALL_REF=<tag-or-commit> \
-SBOX_REALITY_INSTALL_SHA256=<64位SHA-256> \
-bash reality.sh --mode vless
-```
-
----
-
-## 功能特性
-
-- 自动安装 / 更新 sing-box
-- 下载 sing-box 官方发布文件并验证 GitHub 提供的 SHA-256
-- 菜单选择安装、重装或卸载
-- 安装和恢复使用文件快照事务，服务启动失败时自动回滚配置、证书、端口跳跃文件和客户端输出
-- 可单独卸载 AnyTLS、VLESS、HY2，或完整卸载
-- 默认随机选择当前未被占用的高端口
-- 支持手动指定 AnyTLS / VLESS / Hysteria2 监听端口
-- 支持自定义随机端口范围
-- 自动生成 REALITY 私钥和公钥
-- 自动生成 AnyTLS 密码
-- 自动生成 VLESS UUID
-- 自动生成 `short_id`
-- 自动写入服务端配置
-- 自动生成客户端 `outbounds` 片段
-- 支持自定义 REALITY 握手域名
-- 自动执行 `sing-box check`
-- 自动启用并重启 sing-box 服务
-- 增量安装前检查现有入站端口，避免新协议与已有监听端口冲突
-- 备份清理只处理带安装器标记的受管目录，不会遍历删除备份根目录下的普通文件夹
-- 配置简洁，便于二次修改
-
----
-
-## 系统要求
-
-- Debian / Ubuntu（systemd）或 Alpine Linux（OpenRC）
-- root 权限
-- 系统使用 `apt` 或 `apk`
-- VPS 防火墙或云厂商安全组已放行脚本最终输出的 TCP 端口
-- 使用 Hysteria2 端口跳跃时，需要放行脚本最终输出的 UDP 跳跃端口范围
-
----
-
-## 参数说明
-
-| 参数 | 说明 | 默认值 |
-| --- | --- | --- |
-| `-m`, `--mode` | 操作模式：`1`/`anytls`、`2`/`hy2`、`3`/`vless`、`4`/`snell5`、`5`/`snell6`、`6`/`full`、`7`/`uninstall`、`8`/`restore`、`9`/`direct`；协议可用逗号自由多选，如 `1,2,3` | 交互菜单 |
-| `--restore` | 直接恢复最近一次有效备份 | 关闭 |
-| `--config` | 选择 `merge` 增量合并、`keep` 沿用当前配置、`restore` 恢复最近备份或 `new` 生成新配置 | `merge` |
-| `--uninstall` | 卸载范围：`anytls`、`vless`、`hy2`、`snell5`、`snell6`、`direct` 或 `all` | 卸载子菜单 |
-| `--purge` | 卸载全部配置时同时删除 sing-box 软件包 | 关闭 |
-| `-y`, `--yes` | 跳过卸载确认，适合非交互执行 | 关闭 |
-| `--warp-rules` | MetaCubeX geosite 规则名，可一次指定多个，如 `youtube,netflix` | 关闭 |
-| `--warp-off` | 关闭 WARP 分流并保留注册凭据 | 关闭 |
-| `--warp-reset` | 重新注册 WARP 凭据，未指定规则时沿用当前列表 | 关闭 |
-| `-d`, `--domain` | REALITY 握手域名 | `www.apple.com` |
-| `-p`, `--port` | 当前单协议模式的监听端口；同时安装时建议使用各协议端口选项 | `auto` |
-| `--server-host` | 写入客户端 JSON 和分享链接的公网 IP 或域名；自动检测失败时必填 | 自动检测 |
-| `--customer` | 一键创建独立客户节点时使用的客户 ID | 关闭 |
-| `--quota` | 客户节点每月流量额度，例如 `100G` | 不限 |
-| `--reset-day` | 客户节点每月流量重置日 | `1` |
-| `--expires` | 客户节点到期时间 | 不设置 |
-| `--tg-token` | Telegram Bot Token，也可使用环境变量 | 环境变量 |
-| `--tg-chat-id` | Telegram Chat ID，多个用逗号分隔 | 环境变量 |
-| `--anytls-port` | AnyTLS TCP 监听端口 | `auto` |
-| `--vless-domain` | VLESS REALITY 握手域名 | `www.apple.com` |
-| `--vless-port` | VLESS TCP 监听端口 | `auto` |
-| `--hy2-port` | Hysteria2 UDP 实际监听端口；同时安装时推荐使用 | `auto` |
-| `-h`, `--help` | 查看帮助 | - |
-
-环境变量：
-
-| 变量 | 说明 | 默认值 |
-| --- | --- | --- |
-| `HIGH_PORT_MIN` | 随机端口最小值 | `20000` |
-| `HIGH_PORT_MAX` | 随机端口最大值 | `65535` |
-| `INSTALL_MODE` | 安装模式；协议可用逗号自由多选，如 `1,2,3` | 交互菜单 |
-| `SERVER_HOST` | 写入客户端的公网 IP 或域名，等价于 `--server-host` | 自动检测 |
-| `PORT` | 兼容旧脚本的监听端口；会按当前模式分配给对应协议 | 空 |
-| `ANYTLS_PORT` | AnyTLS TCP 监听端口 | `auto` |
-| `VLESS_DOMAIN` | VLESS REALITY 握手域名 | `www.apple.com` |
-| `VLESS_PORT` | VLESS TCP 监听端口 | `auto` |
-| `HY2_PORT` | Hysteria2 UDP 实际监听端口 | `auto` |
-
-示例：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 -d www.apple.com
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1 -d www.microsoft.com -p 8443
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode vless --vless-domain www.apple.com --vless-port auto
-HIGH_PORT_MIN=30000 HIGH_PORT_MAX=50000 bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 1
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode full --anytls-port 8443 --vless-port auto --hy2-port 20000 --ports 20000-50000
-```
-
-Hysteria2 + Surge 参数：
-
-| 参数 | 说明 | 默认值 |
-| --- | --- | --- |
-| `-s`, `--sni` | TLS SNI 和自签证书 CN | `www.bing.com` |
-| `-p`, `--port` | sing-box Hysteria2 实际监听端口；可填具体端口或 `auto` | `auto` |
-| `--port-hopping` | 是否开启端口跳跃：`on` / `off` | `off` |
-| `-P`, `--ports` | 开启跳跃并指定 Surge `port-hopping` 范围，多个值用 `;` 或 `,` 分隔 | `20000-50000` |
-| `-i`, `--interval` | 端口跳跃间隔秒数，最小 `5` | `30` |
-| `--up` | 服务端上传带宽 Mbps，可选 | 不限制 |
-| `--down` | 服务端下载带宽 Mbps，可选 | 不限制 |
-| `--obfs` | 开启 Gecko 混淆 | 已开启 |
-| `--obfs-type` | 混淆类型：`gecko`、`salamander` 或 `off` | `gecko` |
-| `--obfs-password` | 指定 Gecko/Salamander 混淆密码 | 自动生成 |
-| `--gecko-min`, `--gecko-max` | Gecko 最小/最大包长 | `512` / `1200` |
-| `--cert`, `--key` | 使用已有 TLS 证书和私钥 | 自动生成自签证书 |
-| `--name` | Surge 代理名称 | `HY2` |
-
----
-
-## 文件输出
-
-所有客户端输出统一保存在权限为 `700` 的 `/root/sing-box/` 目录。每种协议都会生成 sing-box JSON、URL 文件、Surge 文件和安装信息：
-
-sing-box 客户端 JSON 使用最小配置：默认值不重复写入，仅保留连接必需字段及用户明确启用的自定义功能，避免固定 TCP 等额外限制影响 Emby 等应用。
-
-服务端 `/etc/sing-box/config.json` 按 sing-box 1.15 写法生成最小配置。普通新安装只包含 `inbounds`，保留协议运行、监听、认证和节点管理必需的字段；不自动添加 `outbounds`、`route`、`dns` 或 `log`。客户节点管理器同样遵循此规则，额度和到期状态存放在独立的管理文件中。
-
-只有启用 WARP 分流时，才添加受管的直连出站、WireGuard `endpoints` 和必要的 `route.rules` / `route.rule_set`。远程规则集使用 `http_client`，不生成已弃用的 `download_detour`。关闭 WARP 会删除其受管对象并清理空配置块。增量添加节点时保留已有的自定义出站、路由等配置，不会强制将用户配置裁剪为仅入站。
-
-```text
-服务端配置：/etc/sing-box/config.json
-统一安装信息：/root/sing-box/all-info.txt
-sing-box：/root/sing-box/anytls-sing-box.json
-URL：/root/sing-box/anytls-url.txt
-Surge 兼容性说明：/root/sing-box/anytls-surge.conf
-安装信息：/root/sing-box/anytls-info.txt
-```
-
-VLESS + REALITY 会生成：
-
-```text
-服务端配置：/etc/sing-box/config.json
-sing-box：/root/sing-box/vless-sing-box.json
-URL：/root/sing-box/vless-url.txt
-Surge 兼容性说明：/root/sing-box/vless-surge.conf
-安装信息：/root/sing-box/vless-info.txt
-```
-
-Hysteria2 + Surge 脚本会生成：
-
-```text
-服务端配置：/etc/sing-box/config.json
-sing-box：/root/sing-box/hysteria2-sing-box.json
-URL：/root/sing-box/hysteria2-url.txt
-Surge：/root/sing-box/hysteria2-surge.conf
-安装信息：/root/sing-box/hysteria2-info.txt
-端口跳跃 helper：/usr/local/bin/sing-box-hy2-port-hopping
-端口跳跃 systemd drop-in（Debian/Ubuntu）：/etc/systemd/system/sing-box.service.d/10-hy2-port-hopping.conf
-端口跳跃 OpenRC 服务（Alpine）：/etc/init.d/sing-box-hy2-port-hopping
-```
-
-Snell v5/v6 分别生成 `snell-v5-*` 和 `snell-v6-*` 文件；其中 `*-sing-box.json`、`*-url.txt`、`*-surge.conf` 对应三种格式。Snell 没有官方统一 URL 标准，因此 URL 文件使用常见约定格式。
-
-Surge 官方不支持 VLESS + REALITY，也不支持 AnyTLS 的 REALITY 扩展，所以这两种协议的 `*-surge.conf` 会保存明确的兼容性说明，不会生成无法连接的假配置。
-
-查看客户端 `outbounds`：
-
-```bash
-cat /root/sing-box/anytls-sing-box.json
-```
-
-查看 VLESS 分享链接：
-
-```bash
-cat /root/sing-box/vless-url.txt
-```
-
-查看 Surge 片段：
-
-```bash
-cat /root/sing-box/hysteria2-surge.conf
-```
-
-查看 Hysteria2 URL：
-
-```bash
-cat /root/sing-box/hysteria2-url.txt
-```
-
-客户端输出只包含：
-
-```json
-{
-  "outbounds": [
-    {
-      "type": "anytls",
-      "tag": "proxy",
-      "server": "你的VPS_IP",
-      "server_port": "脚本最终输出的端口",
-      "password": "自动生成",
-      "tls": {
-        "enabled": true,
-        "server_name": "www.apple.com",
-        "utls": {
-          "enabled": true,
-          "fingerprint": "chrome"
-        },
-        "reality": {
-          "enabled": true,
-          "public_key": "自动生成",
-          "short_id": "自动生成"
-        }
-      }
-    }
-  ]
-}
-```
-
-如果你的客户端已经有完整 sing-box 配置，不要重复粘贴第二个 `outbounds`。只需要把里面的 AnyTLS 节点合并进你原来的 `outbounds` 数组。
-
----
-
-## 常用命令
-
-查看状态：
-
-```bash
-systemctl status sing-box --no-pager
-# Alpine
-rc-service sing-box status
-```
-
-查看日志：
-
-```bash
-journalctl -u sing-box -f
-# Alpine
-tail -f /var/log/messages
-```
-
-重启：
-
-```bash
-systemctl restart sing-box
-# Alpine
-rc-service sing-box restart
-```
-
-检查配置：
-
-```bash
-sing-box check -c /etc/sing-box/config.json
-```
-
-查看生成的信息：
-
-```bash
-cat /root/sing-box/all-info.txt
-```
-
----
-
-## 常见问题
-
-### 客户端提示 `decode config: invalid character`
-
-这是 JSON 格式错误，不是协议连接失败。
-
-常见原因：
-
-- 两个 outbound 节点中间少了英文逗号
-- 把完整 `outbounds` 对象重复粘进已有配置
-- 在 JSON 里粘贴了中文说明、注释或多余字符
-
-正确方式：如果原配置已经有 `outbounds`，只复制脚本生成文件里 `outbounds` 数组内部的 AnyTLS 节点进去。
-
----
-
-### 随机端口无法连接
-
-脚本只会检查 VPS 本机当前是否监听该端口，不会自动修改云厂商安全组。
-
-如果无法连接，优先检查：
-
-- VPS 系统防火墙
-- 云厂商安全组
-- 面板防火墙
-- 客户端是否使用了最新生成的端口
-
-例如：
-
-```bash
-ufw allow 端口/tcp
-```
-
----
-
-### 重新运行脚本后客户端不能用了
-
-每次重新运行脚本都会重新生成：
-
-```text
-port
-password
-private_key / public_key
-short_id
-```
-
-所以客户端必须同步更新为最新生成的：
-
-```bash
-/root/sing-box/anytls-sing-box.json
-```
-
----
-
-### Surge 能不能直接用？
-
-这个脚本生成的是 sing-box AnyTLS + REALITY 配置。客户端需要支持 AnyTLS + REALITY。建议优先使用 sing-box 客户端或基于新版 sing-box core 的客户端测试。
-
-如果要给 Surge 使用，请运行统一脚本的 Hysteria2 模式：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/akaagiao1/sbox-reality-1.15-minimal/main/install.sh) --mode 2
-```
-
-它会部署 sing-box Hysteria2，并生成 Surge 的 Hysteria2 `port-hopping` 配置片段。
-
----
-
-## 项目定位
-
-`sbox-reality` 是一个面向个人 VPS 快速部署场景的 Bash 自动化脚本，重点是：
-
-- 少步骤
-- 易阅读
-- 易修改
-- 服务端配置完整
-- 客户端片段干净
-- 默认避开常见 80 / 443 端口冲突
-
----
-
-## 测试
-
-仓库测试不依赖真实 VPS 安装，主要包括参数解析、WARP 配置合并与回滚、备份安全、端口冲突、客户端文件事务和安全文件名处理。
-
-在 Debian/Ubuntu 上安装 `bash curl jq openssl git ripgrep` 后运行：
-
-```bash
-bash tests/test-warp-routing.sh all
-bash tests/test-sbox-manager.sh
-bash tests/test-minimal-config.sh
-bash tests/test-notify.sh
-shellcheck -S warning install.sh sbox-manager.sh reality.sh install-*.sh \
-  tests/test-warp-routing.sh tests/test-sbox-manager.sh tests/test-minimal-config.sh tests/test-notify.sh
-```
-
-设置 `SING_BOX_TEST_BIN=/path/to/sing-box` 后，测试还会执行当前 Alpha 二进制的配置 schema 和规则集启动验证。GitHub Actions 会自动下载最新 Alpha 并运行这些检查。
-
----
-
-## License
-
-AGPL-3.0
+基于 [sbox-reality](https://github.com/akaagiao1/sbox-reality/tree/codex/multi-tenant-traffic)，保留原项目历史及 **AGPL-3.0** 许可证。

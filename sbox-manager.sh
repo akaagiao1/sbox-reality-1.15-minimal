@@ -707,6 +707,7 @@ cmd_node_list() {
              $1, $2, $3, $4, $5, $6, $7
     }
   '
+  printf '\n查看客户端配置：sbox-node node clients <节点ID>\n'
 }
 
 cmd_node_show() {
@@ -717,21 +718,56 @@ cmd_node_show() {
 }
 
 cmd_node_clients() {
+  local id="${1:-}" node_json protocol client_dir
+  node_exists "$id" || die "节点不存在：$id"
+  node_json="$(node_json_by_id "$id")"
+  protocol="$(jq -r '.protocol' <<<"$node_json")"
+  client_dir="$(client_dir_for "$id")"
+  printf '\n客户：%s  节点：%s  协议：%s\n' \
+    "$(jq -r '.customer' <<<"$node_json")" "$id" "$protocol"
+  if [[ "$protocol" == "direct" ]]; then
+    printf '固定中转：%s -> %s:%s\n' \
+      "$(jq -r '.port' <<<"$node_json")" \
+      "$(jq -r '.target_address' <<<"$node_json")" \
+      "$(jq -r '.target_port' <<<"$node_json")"
+    info "Direct 固定中转不生成 Surge 或 sing-box 代理节点。"
+    return 0
+  fi
+  if [[ ! -s "$client_dir/sing-box.json" || ! -s "$client_dir/url.txt" ]] \
+    || { [[ "$protocol" == "snell5" || "$protocol" == "snell6" || "$protocol" == "hy2" ]] \
+      && [[ ! -s "$client_dir/surge.conf" ]]; }; then
+    write_client_files "$node_json" || return 1
+  fi
+  printf '\n--- Surge ---\n'
+  case "$protocol" in
+    anytls) info "Surge 不支持 AnyTLS + REALITY，请使用下方 sing-box 配置。" ;;
+    vless) info "Surge 不支持 VLESS + REALITY，请使用下方 sing-box 配置。" ;;
+    *) cat "$client_dir/surge.conf" ;;
+  esac
+  printf '\n--- sing-box ---\n'
+  cat "$client_dir/sing-box.json"
+  printf '\n--- 分享链接 ---\n'
+  cat "$client_dir/url.txt"
+  printf '\n配置目录：%s\n' "$client_dir"
+}
+
+cmd_node_regen() {
   local id="${1:-}"
   node_exists "$id" || die "节点不存在：$id"
-  write_client_files "$(node_json_by_id "$id")"
-  info "客户端文件已生成：$(client_dir_for "$id")"
+  write_client_files "$(node_json_by_id "$id")" || return 1
+  cmd_node_clients "$id"
 }
 
 select_node_interactive() {
-  local purpose="${1:-选择节点}" id selected index=0
+  local purpose="${1:-选择节点}" id customer protocol port selected index=0
   local -a ids
-  while IFS= read -r id; do
+  while IFS=$'\t' read -r id customer protocol port; do
     [[ -n "$id" ]] || continue
     ids+=("$id")
     index=$(( index + 1 ))
-    printf '  %2d) %s\n' "$index" "$id"
-  done < <(jq -r '.nodes[].id' "$NODES_FILE")
+    printf '  %2d) %s  用户=%s  协议=%s  端口=%s\n' \
+      "$index" "$id" "$customer" "$protocol" "$port"
+  done < <(jq -r '.nodes[] | [.id,.customer,.protocol,(.port|tostring)] | @tsv' "$NODES_FILE")
   (( index > 0 )) || { warn "当前没有客户节点"; return 1; }
   while true; do
     read -rp "$purpose（0=取消）：" selected
@@ -742,6 +778,13 @@ select_node_interactive() {
       return 0
     fi
     echo "请输入有效序号"
+  done
+}
+
+interactive_view_nodes() {
+  cmd_node_list
+  while select_node_interactive "选择要查看配置的节点"; do
+    cmd_node_clients "$SELECTED_NODE" || warn "无法读取节点 $SELECTED_NODE 的客户端配置"
   done
 }
 
@@ -874,7 +917,7 @@ manager_menu() {
     echo
     echo "sbox-reality 客户节点管理"
     echo "  1) 添加客户节点"
-    echo "  2) 查看所有节点"
+    echo "  2) 查看所有节点 / 客户端配置"
     echo "  3) 查看流量和到期状态"
     echo "  4) 修改额度/重置日/到期时间"
     echo "  5) 重置本月流量"
@@ -886,7 +929,7 @@ manager_menu() {
     read -rp "请选择 [0-9]：" choice
     case "$choice" in
       1) interactive_add_node ;;
-      2) cmd_node_list ;;
+      2) interactive_view_nodes ;;
       3) cmd_traffic_show ;;
       4) interactive_edit_limit ;;
       5)
@@ -1674,7 +1717,8 @@ usage() {
   sbox-node node add ID snell5|snell6|anytls|vless|hy2|direct [选项]
   sbox-node node list
   sbox-node node show ID
-  sbox-node node clients ID
+  sbox-node node clients ID        # 显示 Surge、sing-box 配置和分享链接
+  sbox-node node regen ID          # 重新生成并显示客户端文件
   sbox-node node port ID NEW_PORT
   sbox-node node disable|enable|remove ID
   sbox-node node migrate
@@ -1710,7 +1754,8 @@ main() {
           ;;
         list) cmd_node_list ;;
         show) cmd_node_show "$@" ;;
-        clients|regen) cmd_node_clients "$@" ;;
+        clients) cmd_node_clients "$@" ;;
+        regen) cmd_node_regen "$@" ;;
         port|set-port) cmd_node_set_port "$@" ;;
         disable) cmd_node_disable "$@" ;;
         enable) cmd_node_enable "$@" ;;

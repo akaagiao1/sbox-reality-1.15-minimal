@@ -199,4 +199,52 @@ done
   [[ "$(cat "$TMP/package/old-library.so")" == old-library ]] || fail 'removed package runtime not restored'
   [[ ! -e "$TMP/package/new-library.so" ]] || fail 'new package runtime not removed'
 )
-printf 'PASS: installer version selection and upgrade rollback\n' 
+# Non-interactive --setup must be able to skip Telegram instead of aborting:
+# the prompt reports the skip and returns without exiting the caller.
+(
+  set --
+  source "$ROOT/install.sh"
+  TG_TOKEN=''; TG_CHAT_ID=''
+  if prompt_telegram_setup; then fail 'empty Telegram prompt accepted'; fi
+  echo survived > "$TMP/tg-skip"
+) < /dev/null > "$TMP/tg-skip.log" 2>&1
+[[ -f "$TMP/tg-skip" ]] || fail 'non-interactive Telegram skip aborted the installer'
+grep -q '已跳过' "$TMP/tg-skip.log" || fail 'non-interactive Telegram skip not reported'
+
+# Supplying only one of token/chat id remains a hard configuration error.
+if (
+  set --
+  source "$ROOT/install.sh"
+  TG_TOKEN='token-only'; TG_CHAT_ID=''
+  prompt_telegram_setup
+) >/dev/null 2>&1; then
+  fail 'half-configured Telegram accepted'
+fi
+
+# --setup on a host whose sing-box was stopped by the package reinstall must
+# bring an existing configuration back up instead of reporting success with
+# the service down: setup historically only enabled the service.
+setup_dir="$TMP/setup-service"
+mkdir -p "$setup_dir"
+printf '{"inbounds":[{"type":"mixed","tag":"in","listen_port":1080}]}' > "$setup_dir/config.json"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$setup_dir/manager"
+chmod +x "$setup_dir/manager"
+(
+  set --
+  source "$ROOT/install.sh"
+  TG_TOKEN='token'; TG_CHAT_ID='123'
+  SERVER_CONF="$setup_dir/config.json"
+  MANAGER_NODE_BIN="$setup_dir/manager"
+  detect_platform() { :; }
+  install_dependencies() { :; }
+  install_manager_tool() { :; }
+  enable_bbr_and_fq() { :; }
+  service_enable() { :; }
+  service_is_active() { return 1; }
+  service_restart() { printf restarted > "$setup_dir/restarted"; }
+  run_sing_box() { return 0; }
+  run_manager_setup
+) < /dev/null > "$setup_dir/log" 2>&1 || fail 'manager setup with stopped service failed'
+[[ -f "$setup_dir/restarted" ]] || fail 'manager setup left existing sing-box service stopped'
+
+printf 'PASS: installer version selection and upgrade rollback\n'

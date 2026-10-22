@@ -199,6 +199,44 @@ service_restart() {
         self.assertEqual(self.read(self.traffic)["bob"]["paused_reasons"], ["expiry"])
         self.assertTrue(self.paused(25002))
 
+    def test_server_host_file_without_trailing_newline_is_reusable(self):
+        env = dict(self.env)
+        env.pop("SBOX_SERVER_HOST", None)
+        host_file = self.state / "server-host"
+        host_file.write_bytes(b"192.0.2.10")  # no trailing newline
+        for _ in range(2):
+            result = subprocess.run(self.command("server_host"),
+                                    env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "192.0.2.10")
+        self.assertTrue(host_file.read_bytes().endswith(b"\n"))
+
+    def test_consecutive_node_adds_share_server_host_file(self):
+        env = dict(self.env)
+        env.pop("SBOX_SERVER_HOST", None)
+        (self.state / "server-host").write_bytes(b"192.0.2.10")
+        for node_id in ("carol", "dave"):
+            result = subprocess.run(
+                self.command('main "$@"', "node", "add", node_id, "snell6",
+                             "--customer", node_id, "--port", "auto",
+                             "--quota", "0", "--expires", "0"),
+                env=env, text=True, capture_output=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        ids = [n["id"] for n in self.read(self.nodes)["nodes"]]
+        self.assertIn("carol", ids)
+        self.assertIn("dave", ids)
+
+    def test_unconfigured_telegram_does_not_warn_on_auto_resume(self):
+        node = self.node("alice", 25001)
+        node["manual_pause"] = False
+        self.write(self.nodes, {"schema": 1, "nodes": [node]})
+        traffic = self.read(self.traffic)
+        traffic["alice"]["paused_reasons"] = ["quota"]
+        self.write(self.traffic, traffic)
+        result = self.run_manager("traffic", "check")
+        self.assertEqual(self.read(self.traffic)["alice"]["paused_reasons"], [])
+        self.assertNotIn("恢复通知发送失败", result.stderr)
+
     def test_quota_units_and_safe_range(self):
         for value, expected in [("0", "0"), ("1.5G", "1610612736"),
                                 ("1PiB", "1125899906842624"),

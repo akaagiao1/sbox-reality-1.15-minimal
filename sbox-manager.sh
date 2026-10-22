@@ -204,7 +204,10 @@ server_host() {
   local host candidate
   host="${SBOX_SERVER_HOST:-}"
   if [[ -z "$host" && -s "$SERVER_HOST_FILE" ]]; then
-    IFS= read -r host < "$SERVER_HOST_FILE"
+    # read returns failure at EOF when the file has no trailing newline,
+    # even though it did assign the content. That must not abort the
+    # caller under set -e; the content (possibly empty) is what matters.
+    IFS= read -r host < "$SERVER_HOST_FILE" || true
   fi
   if [[ -z "$host" ]]; then
     for candidate in \
@@ -217,7 +220,7 @@ server_host() {
     done
   fi
   [[ -n "$host" ]] || die "无法获取公网地址，请设置 SBOX_SERVER_HOST"
-  printf '%s' "$host" > "$SERVER_HOST_FILE"
+  printf '%s\n' "$host" > "$SERVER_HOST_FILE"
   chmod 600 "$SERVER_HOST_FILE"
   printf '%s' "$host"
 }
@@ -1469,7 +1472,7 @@ cmd_traffic_check_once() {
       fi
     fi
 
-    if [[ -n "$prior_string" && -z "$reason_string" ]]; then
+    if [[ -n "$prior_string" && -z "$reason_string" && -s "$NOTIFY_ENV" ]]; then
       notify_node "$node_json" "节点限制已解除，端口恢复可用。" \
         || warn "节点 $id 的恢复通知发送失败"
     fi

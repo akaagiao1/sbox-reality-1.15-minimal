@@ -2827,6 +2827,7 @@ begin_install_transaction() {
   trap 'install_transaction_on_exit' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  trap 'exit 129' HUP
 }
 
 # Add package-owned files before dpkg can replace or remove them. Never snapshot
@@ -2904,7 +2905,7 @@ rollback_install_transaction() {
 
   (( INSTALL_TRANSACTION_ACTIVE )) || return 0
   [[ -n "$INSTALL_TRANSACTION_DIR" && -d "$INSTALL_TRANSACTION_DIR" ]] || return 1
-  trap - EXIT INT TERM
+  trap - EXIT INT TERM HUP
 
   service_stop
   for entry in "$INSTALL_TRANSACTION_DIR"/path.*; do
@@ -2933,7 +2934,7 @@ rollback_install_transaction() {
 
 finalize_install_transaction() {
   (( INSTALL_TRANSACTION_ACTIVE )) || return 0
-  trap - EXIT INT TERM
+  trap - EXIT INT TERM HUP
   if ! rm -rf -- "$INSTALL_TRANSACTION_DIR"; then
     echo "错误：无法清理安装事务目录：$INSTALL_TRANSACTION_DIR" >&2
     return 1
@@ -2945,7 +2946,7 @@ finalize_install_transaction() {
 
 install_transaction_on_exit() {
   local status="$?"
-  trap - EXIT INT TERM
+  trap - EXIT INT TERM HUP
   if (( INSTALL_TRANSACTION_ACTIVE )); then
     echo "安装未完成，正在恢复安装前状态……" >&2
     rollback_install_transaction || true
@@ -5466,16 +5467,26 @@ prompt_telegram_setup() {
     return 0
   fi
   [[ -t 0 ]] || {
-    echo "错误：首次初始化需要配置 Telegram；非交互模式请同时提供 --tg-token 和 --tg-chat-id" >&2
-    exit 1
+    echo "提示：非交互模式未提供 Telegram 配置，已跳过；之后可运行 sbox-node notify setup TOKEN CHAT_ID 配置" >&2
+    return 1
   }
-  read -rp "是否现在配置 Telegram 通知？[Y/n]：" answer
+  # A failed read means the terminal went away (EOF/EIO), not a bad answer.
+  # Treat it as "skip" so an interrupted prompt cannot abort the whole
+  # installation transaction halfway through.
+  if ! read -rp "是否现在配置 Telegram 通知？[Y/n]：" answer; then
+    return 1
+  fi
   case "${answer:-Y}" in
     n|N|no|NO) return 1 ;;
   esac
-  read -rsp "Telegram Bot Token：" TG_TOKEN
+  if ! read -rsp "Telegram Bot Token：" TG_TOKEN; then
+    echo
+    return 1
+  fi
   echo
-  read -rp "Telegram Chat ID（多个用英文逗号分隔）：" TG_CHAT_ID
+  if ! read -rp "Telegram Chat ID（多个用英文逗号分隔）：" TG_CHAT_ID; then
+    return 1
+  fi
   [[ -n "$TG_TOKEN" && -n "$TG_CHAT_ID" ]] \
     || { echo "错误：Telegram Token 和 Chat ID 不能为空" >&2; exit 1; }
 }
@@ -5509,6 +5520,17 @@ run_manager_setup() {
     echo "已跳过 Telegram 配置；之后可运行 sbox-node notify setup TOKEN CHAT_ID"
   fi
   "$MANAGER_NODE_BIN" traffic timer >/dev/null 2>&1 || true
+
+  # Reinstalling sing-box can leave a previously running service stopped:
+  # setup only enables it. When a configuration with inbounds already
+  # exists, verify it and bring the service back up before declaring
+  # success, so an upgrade never reports completion with nodes down.
+  if [[ -s "$SERVER_CONF" ]] \
+    && jq -e '.inbounds | length > 0' "$SERVER_CONF" >/dev/null 2>&1 \
+    && ! service_is_active; then
+    run_sing_box check -c "$SERVER_CONF" || return 1
+    service_restart || return 1
+  fi
 
   echo
   finalize_install_transaction

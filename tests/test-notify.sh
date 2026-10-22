@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 # shellcheck disable=SC1090
-source <(sed '$d' "$ROOT/sbox-manager.sh")
+source "$ROOT/sbox-manager.sh"
 NOTIFY_ENV="$TMP/notify.env"
 printf 'TG_BOT_TOKEN=123456:TEST_ONLY\nTG_CHAT_ID=12345\n' > "$NOTIFY_ENV"
 unset SBOX_NOTIFY_DRY_RUN_FILE

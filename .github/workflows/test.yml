@@ -29,11 +29,17 @@ jobs:
           bash -n install-hysteria2-surge.sh
           bash -n tests/test-warp-routing.sh
           bash -n tests/test-client-view.sh
+          bash -n tests/test-install-version.sh
           bash -n tests/test-notify.sh
           bash -n tests/test-minimal-config.sh
           bash -n sbox-manager.sh
           bash -n tests/test-sbox-manager.sh
-          shellcheck -S warning install.sh sbox-manager.sh reality.sh install-anytls-reality.sh install-hysteria2-surge.sh tests/test-warp-routing.sh tests/test-sbox-manager.sh tests/test-minimal-config.sh tests/test-notify.sh tests/test-client-view.sh
+          shellcheck -S warning install.sh sbox-manager.sh reality.sh install-anytls-reality.sh install-hysteria2-surge.sh tests/test-warp-routing.sh tests/test-sbox-manager.sh tests/test-minimal-config.sh tests/test-notify.sh tests/test-client-view.sh tests/test-install-version.sh
+
+      - name: Regression tests for manager failures and upgrades
+        run: |
+          python3 tests/test-manager-reliability.py
+          bash tests/test-install-version.sh
 
       - name: Resolve latest sing-box Alpha
         id: alpha

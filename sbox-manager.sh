@@ -68,18 +68,21 @@ size_to_bytes() {
   local value="$1"
   awk -v v="$value" '
     BEGIN {
-      if (v !~ /^[0-9]+([.][0-9]+)?([KMGTPE]i?B?|B)?$/) exit 1
+      if (v !~ /^[0-9]+([.][0-9]+)?([KMGTP]i?B?|B)?$/) exit 1
       unit = v
       sub(/^[0-9]+([.][0-9]+)?/, "", unit)
       num = v
-      sub(/([KMGTPE]i?B?|B)$/, "", num)
+      sub(/([KMGTP]i?B?|B)$/, "", num)
       mult = 1
       if (unit ~ /^K/) mult = 1024
       else if (unit ~ /^M/) mult = 1024 * 1024
       else if (unit ~ /^G/) mult = 1024 * 1024 * 1024
       else if (unit ~ /^T/) mult = 1024 * 1024 * 1024 * 1024
       else if (unit ~ /^P/) mult = 1024 * 1024 * 1024 * 1024 * 1024
-      printf "%.0f\n", num * mult
+      bytes = num * mult
+      # Keep quotas exact in jq/JSON and leave room for percentage arithmetic.
+      if (bytes > 9007199254740991 || (num > 0 && bytes < 1)) exit 1
+      printf "%.0f\n", bytes
     }
   ' 2>/dev/null
 }
@@ -117,12 +120,17 @@ format_bytes() {
 }
 
 acquire_lock() {
+  require_cmd flock
   mkdir -p "$STATE_DIR"
   exec 9>"$LOCK_FILE"
-  if command -v flock >/dev/null 2>&1; then
-    flock -w 60 9 || die "等待状态锁超时"
-  fi
+  flock -w 60 9 || die "等待状态锁超时"
 }
+
+with_state_lock() (
+  acquire_lock
+  init_state
+  "$@"
+)
 
 init_state() {
   mkdir -p "$STATE_DIR" "$TRAFFIC_DIR" "$CLIENTS_ROOT"
@@ -173,7 +181,7 @@ service_restart() {
   fi
   if command -v systemctl >/dev/null 2>&1 \
     && systemctl list-unit-files sing-box.service >/dev/null 2>&1; then
-    systemctl restart sing-box
+    systemctl restart sing-box || return 1
     for _ in {1..10}; do
       systemctl is-active --quiet sing-box && return 0
       sleep 1
@@ -181,8 +189,8 @@ service_restart() {
     systemctl status sing-box --no-pager >&2 || true
     return 1
   elif command -v rc-service >/dev/null 2>&1; then
-    rc-service sing-box restart >/dev/null 2>&1 \
-      || rc-service sing-box start >/dev/null 2>&1 \
+    rc-service sing-box restart 9>&- >/dev/null 2>&1 \
+      || rc-service sing-box start 9>&- >/dev/null 2>&1 \
       || return 1
     for _ in {1..10}; do
       rc-service sing-box status >/dev/null 2>&1 && return 0
@@ -196,7 +204,10 @@ server_host() {
   local host candidate
   host="${SBOX_SERVER_HOST:-}"
   if [[ -z "$host" && -s "$SERVER_HOST_FILE" ]]; then
-    IFS= read -r host < "$SERVER_HOST_FILE"
+    # read returns failure at EOF when the file has no trailing newline,
+    # even though it did assign the content. That must not abort the
+    # caller under set -e; the content (possibly empty) is what matters.
+    IFS= read -r host < "$SERVER_HOST_FILE" || true
   fi
   if [[ -z "$host" ]]; then
     for candidate in \
@@ -209,7 +220,7 @@ server_host() {
     done
   fi
   [[ -n "$host" ]] || die "无法获取公网地址，请设置 SBOX_SERVER_HOST"
-  printf '%s' "$host" > "$SERVER_HOST_FILE"
+  printf '%s\n' "$host" > "$SERVER_HOST_FILE"
   chmod 600 "$SERVER_HOST_FILE"
   printf '%s' "$host"
 }
@@ -331,7 +342,12 @@ render_server_config() {
   local nodes_file="$1" output="$2" generated managed_tags
   generated="$(mktemp)"
   render_generated_inbounds "$nodes_file" "$generated"
-  managed_tags="$(jq -c '[.nodes[].tag]' "$nodes_file")"
+  # Removed nodes still belong to us: filter old AND new managed tags.
+  if [[ -s "$NODES_FILE" ]]; then
+    managed_tags="$(jq -cs '[.[].nodes[]?.tag] | unique' "$NODES_FILE" "$nodes_file")"
+  else
+    managed_tags="$(jq -c '[.nodes[].tag]' "$nodes_file")"
+  fi
   if [[ -s "$SERVER_CONF" ]]; then
     jq --slurpfile generated "$generated" --argjson managed "$managed_tags" '
       .inbounds = ([
@@ -381,33 +397,60 @@ backup_manager_state() {
     | sort -r)
 }
 
-commit_nodes_and_config() {
+commit_nodes_and_config() (
   local candidate_nodes="$1" candidate_config="$2"
-  local old_nodes old_config="" config_existed=0
+  local old_nodes old_config old_traffic new_nodes config_existed=0 committed=0
+  validate_candidate_config "$candidate_nodes" "$candidate_config"
   old_nodes="$(mktemp)"
+  old_config="$(mktemp)"
+  old_traffic="$(mktemp)"
+  new_nodes="$(mktemp)"
   cp -p "$NODES_FILE" "$old_nodes"
+  cp -p "$candidate_nodes" "$new_nodes"
   if [[ -f "$SERVER_CONF" ]]; then
     config_existed=1
-    old_config="$(mktemp)"
     cp -p "$SERVER_CONF" "$old_config"
   fi
+  sample_replaced_node_traffic "$old_nodes" "$new_nodes"
+  cp -p "$TRAFFIC_STATE" "$old_traffic"
   backup_manager_state before-change
-  validate_candidate_config "$candidate_nodes" "$candidate_config"
+
+  finish_node_transaction() {
+    local status="$1"
+    trap - EXIT INT TERM
+    if (( ! committed )); then
+      warn "节点变更失败，正在恢复配置和端口限制"
+      remove_replaced_node_rules "$new_nodes" "$old_nodes" || true
+      atomic_json_from_tmp "$old_nodes" "$NODES_FILE"
+      atomic_json_from_tmp "$old_traffic" "$TRAFFIC_STATE"
+      if (( config_existed )); then
+        atomic_json_from_tmp "$old_config" "$SERVER_CONF"
+      else
+        rm -f "$SERVER_CONF"
+      fi
+      sync_node_guards "$NODES_FILE" || warn "恢复端口限制失败，请检查防火墙"
+      service_restart || warn "旧配置的服务重启失败，请检查 sing-box 日志"
+      (( status != 0 )) || status=1
+    fi
+    rm -f "$old_nodes" "$old_config" "$old_traffic" "$new_nodes" \
+      "$candidate_nodes" "$candidate_config"
+    exit "$status"
+  }
+  trap 'finish_node_transaction $?' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  # New ports must already be protected when the new listener starts. Old
+  # guards/counters remain until restart succeeds, so failure cannot unpause it.
+  sync_node_guards "$new_nodes"
   atomic_json_from_tmp "$candidate_nodes" "$NODES_FILE"
   atomic_json_from_tmp "$candidate_config" "$SERVER_CONF"
-  if ! service_restart; then
-    warn "sing-box 重启失败，正在回滚节点配置"
-    atomic_json_from_tmp "$old_nodes" "$NODES_FILE"
-    if (( config_existed )); then
-      atomic_json_from_tmp "$old_config" "$SERVER_CONF"
-    else
-      rm -f "$SERVER_CONF"
-    fi
-    service_restart || true
-    return 1
-  fi
-  rm -f "$old_nodes" "$old_config"
-}
+  service_restart
+  # Include traffic accrued on the old port during the restart as well.
+  sample_replaced_node_traffic "$old_nodes" "$new_nodes"
+  remove_replaced_node_rules "$old_nodes" "$new_nodes"
+  reset_replaced_node_counters "$old_nodes" "$new_nodes"
+  committed=1
+)
 
 node_json_by_id() {
   jq -c --arg id "$1" '.nodes[] | select(.id == $id)' "$NODES_FILE"
@@ -875,7 +918,7 @@ interactive_add_node() {
   )
   [[ -n "$expires" ]] && add_args+=(--expires "$expires")
   add_args+=("${args[@]}")
-  cmd_node_add "${add_args[@]}"
+  with_state_lock cmd_node_add "${add_args[@]}"
 }
 
 interactive_edit_limit() {
@@ -888,10 +931,10 @@ interactive_edit_limit() {
   read -rp "修改到期时间？[y/N]：" answer
   if [[ "${answer:-N}" =~ ^[Yy]$ ]]; then
     read -rp "新到期日期 YYYY-MM-DD：" expires
-    cmd_traffic_set "$SELECTED_NODE" --quota "${quota:-0}" \
+    with_state_lock cmd_traffic_set "$SELECTED_NODE" --quota "${quota:-0}" \
       --reset-day "${reset_day:-1}" --expires "$expires"
   else
-    cmd_traffic_set "$SELECTED_NODE" --quota "${quota:-0}" \
+    with_state_lock cmd_traffic_set "$SELECTED_NODE" --quota "${quota:-0}" \
       --reset-day "${reset_day:-1}"
   fi
 }
@@ -901,7 +944,7 @@ interactive_notify() {
   read -rsp "Telegram Bot Token：" token
   echo
   read -rp "Telegram Chat ID（多个用英文逗号分隔）：" chat
-  notify_setup "$token" "$chat"
+  with_state_lock notify_setup "$token" "$chat"
   if notify_send "[sbox-reality] Telegram 配置测试成功"; then
     info "测试通知已发送"
   else
@@ -911,8 +954,7 @@ interactive_notify() {
 
 manager_menu() {
   local choice answer
-  acquire_lock
-  init_state
+  with_state_lock init_state
   while true; do
     echo
     echo "sbox-reality 客户节点管理"
@@ -930,25 +972,25 @@ manager_menu() {
     case "$choice" in
       1) interactive_add_node ;;
       2) interactive_view_nodes ;;
-      3) cmd_traffic_show ;;
+      3) with_state_lock cmd_traffic_show ;;
       4) interactive_edit_limit ;;
       5)
         select_node_interactive "选择要重置流量的节点" \
-          && cmd_traffic_reset "$SELECTED_NODE"
+          && with_state_lock cmd_traffic_reset "$SELECTED_NODE"
         ;;
       6)
         select_node_interactive "选择要暂停的节点" \
-          && cmd_traffic_pause "$SELECTED_NODE"
+          && with_state_lock cmd_traffic_pause "$SELECTED_NODE"
         ;;
       7)
         select_node_interactive "选择要恢复的节点" \
-          && cmd_traffic_resume "$SELECTED_NODE"
+          && with_state_lock cmd_traffic_resume "$SELECTED_NODE"
         ;;
       8)
         if select_node_interactive "选择要删除的节点"; then
           read -rp "确认删除 $SELECTED_NODE？[y/N]：" answer
           [[ "${answer:-N}" =~ ^[Yy]$ ]] \
-            && cmd_node_remove "$SELECTED_NODE"
+            && with_state_lock cmd_node_remove "$SELECTED_NODE"
         fi
         ;;
       9) interactive_notify ;;
@@ -997,10 +1039,7 @@ cmd_node_set_port() {
     .nodes |= map(if .id == $id then . + {port:$port, updated_at:(now | floor)} else . end)
   ' "$NODES_FILE" > "$tmp_nodes"
   render_server_config "$tmp_nodes" "$tmp_config"
-  cmd_traffic_unblock "$id" >/dev/null 2>&1 || true
-  cmd_traffic_remove_rules "$id" >/dev/null 2>&1 || true
   commit_nodes_and_config "$tmp_nodes" "$tmp_config"
-  set_traffic_state "$id" last_counter_bytes 0
   if ! write_client_files "$(node_json_by_id "$id")"; then
     warn "端口已修改，但客户端文件生成失败；运行 sbox-node node clients $id"
   fi
@@ -1014,8 +1053,6 @@ cmd_node_remove() {
   node_json="$(node_json_by_id "$id")"
   tag="$(jq -r '.tag' <<<"$node_json")"
   client_dir="$(client_dir_for "$id")"
-  cmd_traffic_unblock "$id" >/dev/null 2>&1 || true
-  cmd_traffic_remove_rules "$id" >/dev/null 2>&1 || true
   tmp_nodes="$(mktemp)"
   tmp_config="$(mktemp)"
   jq --arg id "$id" '.nodes = [.nodes[] | select(.id != $id)]' "$NODES_FILE" > "$tmp_nodes"
@@ -1121,16 +1158,18 @@ cmd_traffic_remove_rules() {
 }
 
 traffic_current_bytes() {
-  local id="$1" total=0 family ipt listing value
+  local id="$1" total=0 family ipt listing value port
   if [[ -n "${SBOX_COUNTER_OVERRIDE_FILE:-}" && -s "${SBOX_COUNTER_OVERRIDE_FILE}" ]]; then
     jq -r --arg id "$id" '.[$id] // 0' "$SBOX_COUNTER_OVERRIDE_FILE"
     return 0
   fi
+  port="$(node_json_by_id "$id" | jq -r '.port')"
   for family in ipv4 ipv6; do
     ipt="$(iptables_cmd_for "$family")" || continue
     listing="$("$ipt" -t mangle -nvxL "$TRAFFIC_CHAIN" 2>/dev/null || true)"
-    value="$(awk -v id="$id" '
-      index($0, "sbox-in-" id " ") || index($0, "sbox-out-" id " ") { total += $2 }
+    value="$(awk -v id="$id" -v port="$port" '
+      (index($0, "sbox-in-" id " ") || index($0, "sbox-out-" id " ")) &&
+        $0 ~ ("[ds]pt:" port "([[:space:]]|$)") { total += $2 }
       END { printf "%.0f\n", total + 0 }
     ' <<<"$listing")"
     total=$(( total + value ))
@@ -1164,7 +1203,7 @@ cmd_traffic_block() {
           -j REJECT --reject-with "$udp_reject" 2>/dev/null \
           || "$ipt" -I INPUT 1 -p udp --dport "$port" \
             -m comment --comment "sbox-pause-$id" \
-            -j REJECT --reject-with "$udp_reject" 2>/dev/null || true
+            -j REJECT --reject-with "$udp_reject"
       fi
     done
   done
@@ -1220,6 +1259,85 @@ set_traffic_state() {
   atomic_json_from_tmp "$tmp" "$TRAFFIC_STATE"
 }
 
+for_replaced_nodes() {
+  local old_file="$1" new_file="$2" operation="$3" id
+  local NODES_FILE="$old_file"
+  while IFS= read -r id; do
+    "$operation" "$id"
+  done < <(jq -r --slurpfile next "$new_file" '
+    .nodes[] | . as $old
+    | select(any($next[0].nodes[];
+        .id == $old.id and .port == $old.port and .transport == $old.transport) | not)
+    | .id
+  ' "$old_file")
+}
+
+sample_node_traffic() {
+  local id="$1" current last used delta
+  init_traffic_entry "$id"
+  current="$(traffic_current_bytes "$id")"
+  last="$(traffic_state_field "$id" last_counter_bytes)"; last="${last:-0}"
+  used="$(traffic_state_field "$id" used_bytes)"; used="${used:-0}"
+  if (( current >= last )); then delta=$(( current - last )); else delta="$current"; fi
+  set_traffic_state "$id" used_bytes "$(( used + delta ))"
+  set_traffic_state "$id" last_counter_bytes "$current"
+}
+
+sample_replaced_node_traffic() {
+  for_replaced_nodes "$1" "$2" sample_node_traffic
+}
+
+remove_node_rules() {
+  cmd_traffic_unblock "$1"
+  cmd_traffic_remove_rules "$1"
+}
+
+remove_replaced_node_rules() {
+  for_replaced_nodes "$1" "$2" remove_node_rules
+}
+
+reset_node_counter() {
+  set_traffic_state "$1" last_counter_bytes 0
+}
+
+reset_replaced_node_counters() {
+  for_replaced_nodes "$1" "$2" reset_node_counter
+}
+
+node_pause_reasons() {
+  local node_json="$1" used="$2" now="$3" quota expires enabled manual reasons='[]'
+  quota="$(jq -r '.quota_bytes // 0' <<<"$node_json")"
+  expires="$(jq -r '.expires_at // 0' <<<"$node_json")"
+  enabled="$(jq -r '.enabled' <<<"$node_json")"
+  manual="$(jq -r '.manual_pause // false' <<<"$node_json")"
+  if [[ "$enabled" != true || "$manual" == true ]]; then
+    reasons='["disabled"]'
+  fi
+  if (( quota > 0 && used >= quota )); then
+    reasons="$(jq -c '. + ["quota"]' <<<"$reasons")"
+  fi
+  if (( expires > 0 && now >= expires )); then
+    reasons="$(jq -c '. + ["expiry"]' <<<"$reasons")"
+  fi
+  printf '%s' "$reasons"
+}
+
+sync_node_guards() {
+  local NODES_FILE="$1" node_json id used reasons now
+  now="$(date +%s)"
+  while IFS= read -r node_json; do
+    id="$(jq -r '.id' <<<"$node_json")"
+    used="$(jq -r --arg id "$id" '.[$id].used_bytes // 0' "$TRAFFIC_STATE")"
+    reasons="$(node_pause_reasons "$node_json" "$used" "$now")"
+    cmd_traffic_ensure_rules "$id"
+    if [[ "$reasons" != '[]' ]]; then
+      cmd_traffic_block "$id"
+    else
+      cmd_traffic_unblock "$id"
+    fi
+  done < <(jq -c '.nodes[]' "$NODES_FILE")
+}
+
 notify_setup() {
   local token="${1:-}" chat="${2:-}" tmp
   [[ "$token" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] || die "Telegram Bot Token 格式无效"
@@ -1273,7 +1391,7 @@ $message"
 cmd_traffic_check_once() {
   local now now_month current_day node_json id current used last delta
   local quota reset_day expires reason_json reason_string prior_string
-  local month_key node_enabled manual_pause warn80 warn100 expiry_key
+  local month_key warn80 warn100 expiry_key
   local local_days remaining
   init_state
   now="$(date +%s)"
@@ -1300,15 +1418,7 @@ cmd_traffic_check_once() {
 
     quota="$(jq -r '.quota_bytes // 0' <<<"$node_json")"
     expires="$(jq -r '.expires_at // 0' <<<"$node_json")"
-    node_enabled="$(jq -r '.enabled' <<<"$node_json")"
-    manual_pause="$(jq -r '.manual_pause // false' <<<"$node_json")"
-    reason_json='[]'
-    [[ "$node_enabled" == "true" && "$manual_pause" != "true" ]] \
-      || reason_json="$(jq -c '. + ["disabled"]' <<<"$reason_json")"
-    (( quota > 0 && used >= quota )) \
-      && reason_json="$(jq -c '. + ["quota"]' <<<"$reason_json")"
-    (( expires > 0 && now >= expires )) \
-      && reason_json="$(jq -c '. + ["expiry"]' <<<"$reason_json")"
+    reason_json="$(node_pause_reasons "$node_json" "$used" "$now")"
     prior_string="$(jq -r --arg id "$id" '.[$id].paused_reasons // [] | join(",")' "$TRAFFIC_STATE")"
     reason_string="$(jq -r 'join(",")' <<<"$reason_json")"
 
@@ -1362,8 +1472,9 @@ cmd_traffic_check_once() {
       fi
     fi
 
-    if [[ -n "$prior_string" && -z "$reason_string" ]]; then
-      notify_node "$node_json" "节点限制已解除，端口恢复可用。"
+    if [[ -n "$prior_string" && -z "$reason_string" && -s "$NOTIFY_ENV" ]]; then
+      notify_node "$node_json" "节点限制已解除，端口恢复可用。" \
+        || warn "节点 $id 的恢复通知发送失败"
     fi
   done < <(jq -c '.nodes[]' "$NODES_FILE")
 }
@@ -1529,15 +1640,19 @@ error_log="/var/log/sbox-traffic.log"
 EOF
     chmod 755 /etc/init.d/sbox-traffic
     rc-update add sbox-traffic default >/dev/null 2>&1 || true
-    rc-service sbox-traffic restart >/dev/null 2>&1 \
-      || rc-service sbox-traffic start >/dev/null 2>&1 || true
+    rc-service sbox-traffic restart 9>&- >/dev/null 2>&1 \
+      || rc-service sbox-traffic start 9>&- >/dev/null 2>&1 || true
   fi
 }
 
 traffic_daemon() {
+  # An OpenRC launcher may have inherited the timer installer's lock fd.
+  exec 9>&-
   trap 'exit 0' INT TERM
   while true; do
-    cmd_traffic_check_once >/dev/null 2>&1 || warn "流量检查失败"
+    # A separate invocation keeps errexit effective and owns its lock only
+    # for this check. Never inherit a lock into the daemon sleep interval.
+    "$BASH" "${BASH_SOURCE[0]}" traffic check >/dev/null 2>&1 || warn "流量检查失败"
     sleep 60
   done
 }
@@ -1742,16 +1857,15 @@ main() {
     install) install_manager ;;
     node)
       action="${1:-}"; shift || true
+      if [[ "$action" == add && $# == 0 ]]; then
+        with_state_lock init_state
+        interactive_add_node
+        return
+      fi
       acquire_lock
       init_state
       case "$action" in
-        add)
-          if (( $# == 0 )); then
-            interactive_add_node
-          else
-            cmd_node_add "$@"
-          fi
-          ;;
+        add) cmd_node_add "$@" ;;
         list) cmd_node_list ;;
         show) cmd_node_show "$@" ;;
         clients) cmd_node_clients "$@" ;;
@@ -1766,6 +1880,10 @@ main() {
       ;;
     traffic)
       action="${1:-}"; shift || true
+      if [[ "$action" == daemon ]]; then
+        traffic_daemon
+        return
+      fi
       acquire_lock
       init_state
       case "$action" in
@@ -1777,7 +1895,6 @@ main() {
         unset|remove) cmd_traffic_unset "$@" ;;
         check) cmd_traffic_check_once ;;
         timer|install-timer) ensure_traffic_timer ;;
-        daemon) traffic_daemon ;;
         *) usage; exit 2 ;;
       esac
       ;;
@@ -1807,4 +1924,6 @@ main() {
   esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

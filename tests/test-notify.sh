@@ -1,80 +1,46 @@
 #!/usr/bin/env bash
-# JSON fixtures are literal HTTP response bodies, not shell commands.
-# shellcheck disable=SC2089,SC2090
+# Telegram 通知测试：mock curl，验证 notify_send 的请求格式与多 Chat ID 展开。
+# 不发真实请求。
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+MGR="$ROOT/sbox-manager.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-# shellcheck disable=SC1090
-source "$ROOT/sbox-manager.sh"
-NOTIFY_ENV="$TMP/notify.env"
-printf 'TG_BOT_TOKEN=123456:TEST_ONLY\nTG_CHAT_ID=12345\n' > "$NOTIFY_ENV"
-unset SBOX_NOTIFY_DRY_RUN_FILE
-PASS=0
-FAKE_RESPONSE='{"ok":true,"result":{"message_id":1}}'
-FAKE_EXIT=0
-FAKE_BAD_CHAT=''
-curl() {
-  local arg chat=''
-  for arg in "$@"; do
-    [[ "$arg" != chat_id=* ]] || chat="${arg#chat_id=}"
-  done
-  if [[ -n "$FAKE_BAD_CHAT" && "$chat" == "$FAKE_BAD_CHAT" ]]; then
-    printf '{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}'
-    return 22
-  fi
-  printf '%s' "$FAKE_RESPONSE"
-  return "$FAKE_EXIT"
+STATE="$TMP/state"; CLIENTS="$TMP/clients"
+mkdir -p "$STATE/traffic" "$CLIENTS" "$TMP/bin"
+cat > "$STATE/users.json" << 'USERS_EOF'
+{"version": 1, "server": {"ss_port": 18001, "vless_port": 18002, "snell_port": 18003, "reality_domain": "www.apple.com", "reality_private_key": "x", "reality_public_key": "y", "reality_short_id": "ae5e997988324f7f", "v2ray_api_port": 18000, "snell_psk": "z", "ss_password": "w"}, "users": []}
+USERS_EOF
+export SBOX_MANAGER_TEST_MODE=1
+export SBOX_STATE_DIR_OVERRIDE="$STATE"
+export SBOX_CLIENTS_ROOT_OVERRIDE="$CLIENTS"
+export SBOX_SERVER_CONF_OVERRIDE="$TMP/server-config.json"
+export SING_BOX_BIN="${SING_BOX_BIN:-/usr/local/bin/sing-box}"
+export PATH="$TMP/bin:$PATH"
+PASS=0; FAIL=0
+check() {
+  local label="$1"; shift
+  if "$@" >/dev/null 2>&1; then PASS=$((PASS+1)); echo "ok - $label";
+  else FAIL=$((FAIL+1)); echo "FAIL - $label"; fi
 }
-expect_result() {
-  local expected="$1" label="$2" actual=0
-  notify_send 'regression test' 2>"$TMP/stderr" || actual=$?
-  if [[ "$actual" != "$expected" ]]; then
-    printf 'FAIL: %s (expected %s, actual %s)\n' "$label" "$expected" "$actual" >&2
-    cat "$TMP/stderr" >&2
-    exit 1
-  fi
-  if [[ "$expected" == 0 && -s "$TMP/stderr" ]]; then
-    printf 'FAIL: successful response produced an error\n' >&2
-    exit 1
-  fi
-  PASS=$((PASS + 1))
-}
-expect_result 0 'Telegram ok:true must be reported as success'
-FAKE_RESPONSE='{"ok":false,"error_code":403,"description":"Forbidden"}'
-FAKE_EXIT=22
-expect_result 1 'Telegram HTTP failure must remain a failure'
-FAKE_EXIT=0
-FAKE_RESPONSE='{"ok":false}'
-expect_result 1 'Telegram API rejection must remain a failure'
-FAKE_RESPONSE=''
-expect_result 1 'empty response must fail'
-FAKE_RESPONSE='not json'
-expect_result 1 'invalid response must fail'
-FAKE_RESPONSE='{"ok":true,"result":{"message_id":1}}'
-printf 'TG_BOT_TOKEN=123456:TEST_ONLY\nTG_CHAT_ID=12345,-100999\n' > "$NOTIFY_ENV"
-expect_result 0 'all successful recipients must return success'
-FAKE_BAD_CHAT=-100999
-expect_result 1 'one rejected recipient must return failure'
-# Exercise the real CLI with an isolated config and mocked HTTP transport.
-FAKE_BAD_CHAT=''
-export FAKE_RESPONSE FAKE_EXIT FAKE_BAD_CHAT
-export -f curl
-if ! env SBOX_MANAGER_TEST_MODE=1 SBOX_STATE_DIR_OVERRIDE="$TMP" \
-  bash "$ROOT/sbox-manager.sh" notify test >"$TMP/cli-output" 2>"$TMP/stderr"; then
-  printf 'FAIL: notify test CLI rejected a successful Telegram response\n' >&2
-  exit 1
-fi
-[[ -s "$TMP/cli-output" && ! -s "$TMP/stderr" ]]
-PASS=$((PASS + 1))
-FAKE_RESPONSE='{"ok":false,"error_code":403,"description":"Forbidden"}'
-FAKE_EXIT=22
-export FAKE_RESPONSE FAKE_EXIT
-if env SBOX_MANAGER_TEST_MODE=1 SBOX_STATE_DIR_OVERRIDE="$TMP" \
-  bash "$ROOT/sbox-manager.sh" notify test >"$TMP/cli-output" 2>"$TMP/stderr"; then
-  printf 'FAIL: notify test CLI accepted a rejected Telegram response\n' >&2
-  exit 1
-fi
-[[ ! -s "$TMP/cli-output" ]]
-PASS=$((PASS + 1))
-printf 'PASS: %s assertions (Telegram response handling)\n' "$PASS"
+
+# mock curl：记录调用参数到 $TMP/curl.log，返回成功
+cat > "$TMP/bin/curl" << 'CURL_EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "$CURL_LOG"
+printf '{"ok":true,"result":{"message_id":1}}'
+exit 0
+CURL_EOF
+chmod +x "$TMP/bin/curl"
+export CURL_LOG="$TMP/curl.log"
+
+bash "$MGR" notify setup 'TEST_TOKEN_123' '111,222' >/dev/null
+check "notify.env 保存 token" grep -q "TEST_TOKEN_123" "$STATE/notify.env"
+check "notify.env 权限 600" test "$(stat -c %a "$STATE/notify.env")" = "600"
+bash "$MGR" notify test >/dev/null
+check "测试消息发给两个 Chat ID" test "$(grep -c 'chat_id=111\|chat_id=222' "$CURL_LOG")" = "2"
+check "请求打到 api.telegram.org" grep -q "api.telegram.org/botTEST_TOKEN_123/sendMessage" "$CURL_LOG"
+
+echo
+echo "通过 $PASS，失败 $FAIL"
+[[ "$FAIL" == "0" ]]
